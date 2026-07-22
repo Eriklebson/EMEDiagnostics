@@ -1,0 +1,47 @@
+# Visual Studio / IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET build outputs
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Ll]og/
+[Ll]ogs/
+TestResults/
+
+# Packages and publishing
+packages/
+*.nupkg
+*.snupkg
+publish/
+AppPackages/
+BundleArtifacts/
+
+# WinUI / MSIX generated files
+Generated Files/
+GeneratedFiles/
+*.appx
+*.appxbundle
+*.appxupload
+*.msix
+*.msixbundle
+*.msixupload
+*.cer
+
+# Local runtime and diagnostic files
+*.log
+*.dmp
+*.tmp
+*.temp
+*.bak
+
+# Operating system files
+Thumbs.db
+Desktop.ini
+.DS_Store
+

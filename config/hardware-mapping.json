@@ -1,0 +1,16 @@
+{
+  "Motherboards": [
+    {
+      "Name": "ASUS TUF GAMING B550M-PLUS",
+      "FanMapping": {
+        "Fan #1": "Chassis Fan 1",
+        "Fan #2": "CPU Fan",
+        "Fan #3": "Chassis Fan 2",
+        "Fan #4": "Chassis Fan 3",
+        "Fan #5": "Chassis Fan 4",
+        "Fan #6": "CPU Optional",
+        "Fan #7": "AIO Pump"
+      }
+    }
+  ]
+}

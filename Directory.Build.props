@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <UICulture>en-US</UICulture>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
