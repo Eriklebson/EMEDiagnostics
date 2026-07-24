@@ -38,9 +38,15 @@ public sealed partial class MainWindow : Window
     private TelemetryChart? _cpuTelemetryChart;
     private TelemetryChart? _gpuTelemetryChart;
     private TelemetryChart? _memoryTelemetryChart;
+    private TelemetryChart? _storageTelemetryChart;
+    private TextBlock? _storageStressState;
+    private TextBlock? _storageStressMetrics;
+    private Button? _storageStressStart;
+    private Button? _storageStressStop;
     private DateTimeOffset _lastCpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastGpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastMemoryChartSample = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastStorageChartSample = DateTimeOffset.MinValue;
 
     public MainWindow(MainViewModel viewModel, StressCatalogService stressCatalog)
     {
@@ -60,6 +66,7 @@ public sealed partial class MainWindow : Window
             _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
             _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
             _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
+            _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
         }
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
@@ -97,6 +104,17 @@ public sealed partial class MainWindow : Window
             {
                 _lastMemoryChartSample = DateTimeOffset.UtcNow;
                 _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
+            }
+        }
+        if ((e.PropertyName == nameof(MainViewModel.StorageStressStatus) || e.PropertyName == nameof(MainViewModel.StorageStressMetrics)) &&
+            _viewModel.CurrentPage == "Stress Test")
+        {
+            UpdateStorageStressUi();
+            if (_viewModel.StorageStressStatus is StressStatus.Running or StressStatus.Cancelling &&
+                DateTimeOffset.UtcNow - _lastStorageChartSample >= TimeSpan.FromSeconds(1))
+            {
+                _lastStorageChartSample = DateTimeOffset.UtcNow;
+                _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
             }
         }
             });
@@ -349,6 +367,11 @@ public sealed partial class MainWindow : Window
             if (test.Target == StressTarget.Memory)
             {
                 page.Children.Add(MemoryStressCard(test));
+                continue;
+            }
+            if (test.Target == StressTarget.Storage)
+            {
+                page.Children.Add(StorageStressCard(test));
                 continue;
             }
 
@@ -674,6 +697,69 @@ public sealed partial class MainWindow : Window
               $"{metrics.AllocatedMb} MB  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
         _memoryStressStart.IsEnabled = !running && !cancelling;
         _memoryStressStop.IsEnabled = running || cancelling;
+    }
+
+    private Border StorageStressCard(StressTestDefinition test)
+    {
+        var stack = new StackPanel { Spacing = 10 };
+        stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        stack.Children.Add(new TextBlock
+        {
+            Text = test.Description,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = DesignTokens.Muted,
+            MinHeight = 42
+        });
+
+        _storageStressState = new TextBlock { Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold };
+        _storageStressMetrics = new TextBlock { Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas"), FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        stack.Children.Add(_storageStressState);
+        stack.Children.Add(_storageStressMetrics);
+
+        _storageTelemetryChart = new TelemetryChart(isStorage: true);
+        _storageTelemetryChart.AddSample(_viewModel.Snapshot, isStorage: true);
+        stack.Children.Add(_storageTelemetryChart);
+
+        _storageStressState.Text = "Pronto para testar Storage";
+        _storageStressMetrics.Text = "Arquivo temporário de 256 MB • lotes de 64 KB";
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _storageStressStart = new Button { Content = "Iniciar teste de Storage", HorizontalAlignment = HorizontalAlignment.Left };
+        _storageStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
+        _storageStressStart.Click += async (_, _) =>
+        {
+            await _viewModel.StartStorageStressAsync(test.DefaultDuration);
+        };
+        _storageStressStop.Click += (_, _) => _viewModel.StopStorageStress();
+        actions.Children.Add(_storageStressStart);
+        actions.Children.Add(_storageStressStop);
+        stack.Children.Add(actions);
+        UpdateStorageStressUi();
+        return Card(stack);
+    }
+
+    private void UpdateStorageStressUi()
+    {
+        if (_storageStressState is null || _storageStressMetrics is null || _storageStressStart is null || _storageStressStop is null) return;
+
+        var running = _viewModel.StorageStressStatus == StressStatus.Running;
+        var cancelling = _viewModel.StorageStressStatus == StressStatus.Cancelling;
+        var metrics = _viewModel.StorageStressMetrics;
+        _storageStressState.Text = _viewModel.StorageStressStatus switch
+        {
+            StressStatus.Running => "Estressando Storage...",
+            StressStatus.Cancelling => "Cancelando...",
+            StressStatus.Completed => "Storage OK — sem erros",
+            StressStatus.Cancelled => "Teste de Storage cancelado",
+            StressStatus.Failed => $"Falha! {metrics?.Errors ?? 0} erro(s)",
+            _ => "Pronto para testar Storage"
+        };
+        _storageStressMetrics.Text = metrics is null
+            ? "Aguardando início"
+            : $"{metrics.Elapsed:mm\\:ss}  •  {metrics.ProgressPercent:0.0}%  •  " +
+              $"{metrics.ThroughputMBs:0.0} MB/s  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
+        _storageStressStart.IsEnabled = !running && !cancelling;
+        _storageStressStop.IsEnabled = running || cancelling;
     }
 
     private void UpdateGpuStressUi()

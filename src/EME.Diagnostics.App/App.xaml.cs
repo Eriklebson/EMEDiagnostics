@@ -23,6 +23,7 @@ public partial class App : Application
                 services.AddSingleton<ICpuStressEngine, CpuStressEngine>();
                 services.AddSingleton<IGpuStressEngine, DirectX11GpuStressEngine>();
                 services.AddSingleton<IMemoryStressEngine, MemoryStressEngine>();
+                services.AddSingleton<IStorageStressEngine, StorageStressEngine>();
                 services.AddSingleton<IReportService, PendingReportService>();
                 services.AddSingleton<StressCatalogService>();
                 services.AddSingleton<ViewModels.MainViewModel>();

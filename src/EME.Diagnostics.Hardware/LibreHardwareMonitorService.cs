@@ -75,6 +75,8 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
                 ReadMemory(memory, "Memory Used"),
                 ReadMemory(memory, "Memory Available") + ReadMemory(memory, "Memory Used"),
                 FindMemoryTemperature(all),
+                FindStorageTemperature(all),
+                FindStorageLoad(all),
                 fans,
                 devices);
         }
@@ -104,6 +106,20 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
             .FirstOrDefault(x => x.SensorType == SensorType.Temperature && x.Name.Contains("DIMM", StringComparison.OrdinalIgnoreCase) && x.Value.HasValue);
         return dimm?.Value ?? all.SelectMany(x => x.Sensors)
             .FirstOrDefault(x => x.SensorType == SensorType.Temperature && x.Name.Contains("Memory", StringComparison.OrdinalIgnoreCase) && x.Value.HasValue)?.Value;
+    }
+
+    private static double? FindStorageTemperature(IHardware[] all)
+    {
+        return all.Where(x => x.HardwareType == HardwareType.Storage)
+            .SelectMany(x => x.Sensors)
+            .FirstOrDefault(x => x.SensorType == SensorType.Temperature && x.Value.HasValue)?.Value;
+    }
+
+    private static double? FindStorageLoad(IHardware[] all)
+    {
+        return all.Where(x => x.HardwareType == HardwareType.Storage)
+            .SelectMany(x => x.Sensors)
+            .FirstOrDefault(x => x.SensorType == SensorType.Load && x.Value.HasValue)?.Value;
     }
 
     private static double? Find(IHardware hardware, SensorType type, params string[] priorities)

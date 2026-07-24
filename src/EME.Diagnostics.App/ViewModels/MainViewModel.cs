@@ -12,12 +12,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ICpuStressEngine _cpuStressEngine;
     private readonly IGpuStressEngine _gpuStressEngine;
     private readonly IMemoryStressEngine _memoryStressEngine;
+    private readonly IStorageStressEngine _storageStressEngine;
     private readonly GpuVramTest _vramTest = new();
     private readonly PeriodicTimer _timer = new(TimeSpan.FromSeconds(1));
     private readonly CancellationTokenSource _cancellation = new();
     private CancellationTokenSource? _cpuStressCancellation;
     private CancellationTokenSource? _gpuStressCancellation;
     private CancellationTokenSource? _memoryStressCancellation;
+    private CancellationTokenSource? _storageStressCancellation;
     private CancellationTokenSource? _vramTestCancellation;
 
     private string _currentPage = "Dashboard";
@@ -31,6 +33,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private StressStatus _vramTestStatus = StressStatus.NotStarted;
     private MemoryStressMetrics? _memoryStressMetrics;
     private StressStatus _memoryStressStatus = StressStatus.NotStarted;
+    private StorageStressMetrics? _storageStressMetrics;
+    private StressStatus _storageStressStatus = StressStatus.NotStarted;
 
     public string CurrentPage { get => _currentPage; private set => SetProperty(ref _currentPage, value); }
     public HardwareSnapshot Snapshot { get => _snapshot; private set => SetProperty(ref _snapshot, value); }
@@ -43,19 +47,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public StressStatus VramTestStatus { get => _vramTestStatus; private set => SetProperty(ref _vramTestStatus, value); }
     public MemoryStressMetrics? MemoryStressMetrics { get => _memoryStressMetrics; private set => SetProperty(ref _memoryStressMetrics, value); }
     public StressStatus MemoryStressStatus { get => _memoryStressStatus; private set => SetProperty(ref _memoryStressStatus, value); }
+    public StorageStressMetrics? StorageStressMetrics { get => _storageStressMetrics; private set => SetProperty(ref _storageStressMetrics, value); }
+    public StressStatus StorageStressStatus { get => _storageStressStatus; private set => SetProperty(ref _storageStressStatus, value); }
     public string GpuBackendName => _gpuStressEngine.BackendName;
     public bool IsGpuStressAvailable => _gpuStressEngine.IsAvailable;
     public bool IsVramTestAvailable => _vramTest.IsAvailable;
 
-    public MainViewModel(IHardwareMonitor hardware, ICpuStressEngine cpuStressEngine, IGpuStressEngine gpuStressEngine, IMemoryStressEngine memoryStressEngine)
+    public MainViewModel(IHardwareMonitor hardware, ICpuStressEngine cpuStressEngine, IGpuStressEngine gpuStressEngine, IMemoryStressEngine memoryStressEngine, IStorageStressEngine storageStressEngine)
     {
         _hardware = hardware;
         _cpuStressEngine = cpuStressEngine;
         _gpuStressEngine = gpuStressEngine;
         _memoryStressEngine = memoryStressEngine;
+        _storageStressEngine = storageStressEngine;
         _cpuStressEngine.MetricsUpdated += OnCpuStressMetricsUpdated;
         _gpuStressEngine.MetricsUpdated += OnGpuStressMetricsUpdated;
         _memoryStressEngine.MetricsUpdated += OnMemoryStressMetricsUpdated;
+        _storageStressEngine.MetricsUpdated += OnStorageStressMetricsUpdated;
         _vramTest.MetricsUpdated += OnVramTestMetricsUpdated;
     }
 
@@ -80,7 +88,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var mem = GetMemoryStatus();
             var usedGb = (mem.ullTotalPhys - mem.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
             var totalGb = mem.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
-            Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature };
+            Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature, StorageTemperature = snapshot.StorageTemperature, StorageLoad = snapshot.StorageLoad };
             Status = $"Dados atualizados às {Snapshot.CapturedAt:HH:mm:ss}";
         }
         catch (Exception ex) { Status = $"Sensores indisponíveis: {ex.Message}"; }
@@ -233,6 +241,45 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _memoryStressCancellation?.Cancel();
     }
 
+    public async Task StartStorageStressAsync(TimeSpan duration)
+    {
+        if (StorageStressStatus == StressStatus.Running) return;
+
+        _storageStressCancellation?.Dispose();
+        _storageStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
+        StorageStressMetrics = new StorageStressMetrics(TimeSpan.Zero, duration, 0, 0, 0, 0);
+        StorageStressStatus = StressStatus.Running;
+        Status = $"Teste de Storage iniciado — escrevendo {64 * 1024 / 1024} MB/s em lotes.";
+
+        try
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "EMEDiagnostics");
+            Directory.CreateDirectory(tempDir);
+            await _storageStressEngine.RunAsync(
+                new StorageStressOptions(duration, 256, tempDir),
+                _storageStressCancellation.Token);
+            StorageStressStatus = StressStatus.Completed;
+            Status = "Teste de Storage concluído com sucesso.";
+        }
+        catch (OperationCanceledException)
+        {
+            StorageStressStatus = StressStatus.Cancelled;
+            Status = "Teste de Storage cancelado.";
+        }
+        catch (Exception exception)
+        {
+            StorageStressStatus = StressStatus.Failed;
+            Status = $"Falha no teste de Storage: {exception.Message}";
+        }
+    }
+
+    public void StopStorageStress()
+    {
+        StorageStressStatus = StressStatus.Cancelling;
+        Status = "Cancelando teste de Storage...";
+        _storageStressCancellation?.Cancel();
+    }
+
     private static MEMORYSTATUSEX GetMemoryStatus()
     {
         var mem = new MEMORYSTATUSEX();
@@ -268,6 +315,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void OnCpuStressMetricsUpdated(object? sender, CpuStressMetrics metrics) => CpuStressMetrics = metrics;
     private void OnGpuStressMetricsUpdated(object? sender, GpuStressMetrics metrics) => GpuStressMetrics = metrics;
     private void OnMemoryStressMetricsUpdated(object? sender, MemoryStressMetrics metrics) => MemoryStressMetrics = metrics;
+    private void OnStorageStressMetricsUpdated(object? sender, StorageStressMetrics metrics) => StorageStressMetrics = metrics;
     private void OnVramTestMetricsUpdated(object? sender, VramTestMetrics metrics) => VramTestMetrics = metrics;
 
     private async Task RefreshLoopAsync(CancellationToken cancellationToken)
@@ -289,16 +337,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _cpuStressCancellation?.Cancel();
         _gpuStressCancellation?.Cancel();
         _memoryStressCancellation?.Cancel();
+        _storageStressCancellation?.Cancel();
         _vramTestCancellation?.Cancel();
         _cpuStressEngine.MetricsUpdated -= OnCpuStressMetricsUpdated;
         _gpuStressEngine.MetricsUpdated -= OnGpuStressMetricsUpdated;
         _memoryStressEngine.MetricsUpdated -= OnMemoryStressMetricsUpdated;
+        _storageStressEngine.MetricsUpdated -= OnStorageStressMetricsUpdated;
         _vramTest.MetricsUpdated -= OnVramTestMetricsUpdated;
         _cancellation.Cancel();
         _timer.Dispose();
         _cpuStressCancellation?.Dispose();
         _gpuStressCancellation?.Dispose();
         _memoryStressCancellation?.Dispose();
+        _storageStressCancellation?.Dispose();
         _vramTestCancellation?.Dispose();
         _gpuStressEngine.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _vramTest.Dispose();

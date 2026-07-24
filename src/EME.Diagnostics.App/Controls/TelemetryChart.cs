@@ -17,7 +17,7 @@ public sealed partial class TelemetryChart : Grid
     private readonly Dictionary<string, Series> _series;
     private TelemetryChartStyle _style = TelemetryChartStyle.Line;
 
-    public TelemetryChart(bool isGpu = false, bool isMemory = false)
+    public TelemetryChart(bool isGpu = false, bool isMemory = false, bool isStorage = false)
     {
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -30,7 +30,15 @@ public sealed partial class TelemetryChart : Grid
         legend.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         List<(string Key, string Label, string Color, int Index)> series;
-        if (isMemory)
+        if (isStorage)
+        {
+            series =
+            [
+                ("usage", "USO", "#4DA3FF", 0),
+                ("temperature", "TEMP", "#FF5C6C", 1),
+            ];
+        }
+        else if (isMemory)
         {
             series =
             [
@@ -39,6 +47,19 @@ public sealed partial class TelemetryChart : Grid
                 ("used", "USADA", "#A970FF", 2),
                 ("free", "DISP", "#4CCBA0", 3),
             ];
+        }
+        else if (isGpu)
+        {
+            series =
+            [
+                ("usage", "USO", "#4DA3FF", 0),
+                ("temperature", "TEMPERATURA", "#FF5C6C", 1),
+                ("clock", "CLOCK", "#A970FF", 2),
+                ("power", "POTÊNCIA", "#FFC857", 3)
+            ];
+            series.Add(("fan", "GPU FAN 1", "#4CCBA0", 4));
+            series.Add(("cpuOpt", "GPU FAN 2", "#35C2D8", 5));
+            series.Add(("pump", "GPU PUMP", "#FF8A4C", 6));
         }
         else
         {
@@ -101,9 +122,14 @@ public sealed partial class TelemetryChart : Grid
         ApplySeriesVisibility(series, visible);
     }
 
-    public void AddSample(HardwareSnapshot snapshot, bool isGpu = false, bool isMemory = false)
+    public void AddSample(HardwareSnapshot snapshot, bool isGpu = false, bool isMemory = false, bool isStorage = false)
     {
-        if (isMemory)
+        if (isStorage)
+        {
+            Add("usage", snapshot.StorageLoad, 100, snapshot.StorageLoad, "%");
+            Add("temperature", snapshot.StorageTemperature, 110, snapshot.StorageTemperature, "°C");
+        }
+        else if (isMemory)
         {
             var total = snapshot.MemoryTotalGb;
             var used = snapshot.MemoryUsedGb;
