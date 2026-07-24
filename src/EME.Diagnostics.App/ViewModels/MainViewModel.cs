@@ -249,14 +249,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _storageStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
         StorageStressMetrics = new StorageStressMetrics(TimeSpan.Zero, duration, 0, 0, 0, 0);
         StorageStressStatus = StressStatus.Running;
-        Status = $"Teste de Storage iniciado — {256} MB em lotes de 64 KB.";
+        Status = $"Teste de Storage iniciado — {1024} MB em lotes de 64 KB.";
 
         try
         {
             var tempDir = Path.Combine(Path.GetTempPath(), "EMEDiagnostics");
             Directory.CreateDirectory(tempDir);
             await _storageStressEngine.RunAsync(
-                new StorageStressOptions(duration, 256, tempDir),
+                new StorageStressOptions(duration, 1024, tempDir),
                 _storageStressCancellation.Token);
             StorageStressStatus = StressStatus.Completed;
             Status = "Teste de Storage concluído com sucesso.";

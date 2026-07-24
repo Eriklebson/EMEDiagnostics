@@ -721,7 +721,7 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(_storageTelemetryChart);
 
         _storageStressState.Text = "Pronto para testar Storage";
-        _storageStressMetrics.Text = "Arquivo temporário de 256 MB • lotes de 64 KB";
+        _storageStressMetrics.Text = "Arquivo temporário de 1 GB • lotes de 64 KB";
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         _storageStressStart = new Button { Content = "Iniciar teste de Storage", HorizontalAlignment = HorizontalAlignment.Left };

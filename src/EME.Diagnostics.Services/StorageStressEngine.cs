@@ -43,9 +43,9 @@ public sealed class StorageStressEngine : IStorageStressEngine
             while ((unlimited || stopwatch.Elapsed < options.Duration) &&
                    await metricsTimer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
-                // Write — bypass cache to exercise disk
+                // Write — sequential, flush on close to exercise disk
                 using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write,
-                           FileShare.Read, WriteSize, FileOptions.WriteThrough | FileOptions.SequentialScan))
+                           FileShare.Read, WriteSize, FileOptions.SequentialScan))
                 {
                     for (int i = 0; i < totalChunks && (unlimited || stopwatch.Elapsed < options.Duration); i++)
                     {
@@ -54,6 +54,7 @@ public sealed class StorageStressEngine : IStorageStressEngine
                         Interlocked.Increment(ref _operations);
                         if (cancellationToken.IsCancellationRequested) break;
                     }
+                    await stream.FlushAsync().ConfigureAwait(false);
                 }
                 writeOps += totalChunks;
 
