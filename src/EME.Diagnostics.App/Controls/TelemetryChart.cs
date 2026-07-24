@@ -13,6 +13,7 @@ public enum TelemetryChartStyle { Line, Area, Step }
 public sealed partial class TelemetryChart : Grid
 {
     private const int MaximumSamples = 120;
+    private const double RightPadding = 40;
     private readonly Canvas _plot = new() { Height = 230 };
     private readonly Dictionary<string, Series> _series;
     private TelemetryChartStyle _style = TelemetryChartStyle.Line;
@@ -34,8 +35,9 @@ public sealed partial class TelemetryChart : Grid
         {
             series =
             [
-                ("usage", "USO", "#4DA3FF", 0),
-                ("temperature", "TEMP", "#FF5C6C", 1),
+                ("read", "LEITURA", "#4DA3FF", 0),
+                ("write", "ESCRITA", "#FF5C6C", 1),
+                ("temperature", "TEMP", "#A970FF", 2),
             ];
         }
         else if (isMemory)
@@ -126,7 +128,8 @@ public sealed partial class TelemetryChart : Grid
     {
         if (isStorage)
         {
-            Add("usage", snapshot.StorageLoad, 100, snapshot.StorageLoad, "%");
+            Add("read", snapshot.StorageReadMBs, 7000, snapshot.StorageReadMBs, "MB/s");
+            Add("write", snapshot.StorageWriteMBs, 7000, snapshot.StorageWriteMBs, "MB/s");
             Add("temperature", snapshot.StorageTemperature, 110, snapshot.StorageTemperature, "°C");
         }
         else if (isMemory)
@@ -203,6 +206,8 @@ public sealed partial class TelemetryChart : Grid
             });
         }
 
+        var plotWidth = width - RightPadding;
+
         foreach (var series in _series.Values)
         {
             if (!series.Visible || series.Values.All(value => !value.HasValue)) continue;
@@ -212,7 +217,7 @@ public sealed partial class TelemetryChart : Grid
             for (var index = 0; index < series.Values.Count; index++)
             {
                 if (!series.Values[index].HasValue) continue;
-                var x = width * index / divisor;
+                var x = plotWidth * index / divisor;
                 var y = height - height * series.Values[index]!.Value / 100d;
                 lastPoint = new Point(x, y);
                 if (_style == TelemetryChartStyle.Step && points.Count > 0)
@@ -246,6 +251,22 @@ public sealed partial class TelemetryChart : Grid
                 Canvas.SetLeft(marker, lastPoint.Value.X - marker.Width / 2);
                 Canvas.SetTop(marker, lastPoint.Value.Y - marker.Height / 2);
                 _plot.Children.Add(marker);
+
+                var lastValue = series.Values.LastOrDefault(v => v.HasValue);
+                if (lastValue.HasValue)
+                {
+                    var valueLabel = new TextBlock
+                    {
+                        Text = $"{lastValue.Value:F0}",
+                        FontSize = 10,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        Foreground = series.Color,
+                        FontFamily = new FontFamily("Consolas")
+                    };
+                    Canvas.SetLeft(valueLabel, Math.Min(lastPoint.Value.X - 14, plotWidth - 40));
+                    Canvas.SetTop(valueLabel, lastPoint.Value.Y - 18);
+                    _plot.Children.Add(valueLabel);
+                }
             }
         }
     }

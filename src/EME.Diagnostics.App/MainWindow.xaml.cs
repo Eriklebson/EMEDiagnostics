@@ -41,12 +41,14 @@ public sealed partial class MainWindow : Window
     private TelemetryChart? _storageTelemetryChart;
     private TextBlock? _storageStressState;
     private TextBlock? _storageStressMetrics;
-    private Button? _storageStressStart;
+    private Button? _storageWriteStart;
+    private Button? _storageReadStart;
     private Button? _storageStressStop;
     private DateTimeOffset _lastCpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastGpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastMemoryChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastStorageChartSample = DateTimeOffset.MinValue;
+    private CancellationTokenSource _chartTimerCts = new();
 
     public MainWindow(MainViewModel viewModel, StressCatalogService stressCatalog)
     {
@@ -61,13 +63,10 @@ public sealed partial class MainWindow : Window
                 if (e.PropertyName == nameof(MainViewModel.CurrentPage)) ShowPage();
                 if (e.PropertyName == nameof(MainViewModel.Status)) _status.Text = _viewModel.Status;
                 if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Dashboard") UpdateDashboard();
-        if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Stress Test")
-        {
-            _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
-            _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
-            _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
-            _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
-        }
+                if (e.PropertyName == nameof(MainViewModel.Snapshot))
+                {
+                    UpdateCharts();
+                }
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
                 {
@@ -120,7 +119,33 @@ public sealed partial class MainWindow : Window
             });
         };
         Activated += async (_, _) => { if (_viewModel.Snapshot == HardwareSnapshot.Empty) await _viewModel.StartAsync(); };
-        Closed += (_, _) => _viewModel.Dispose();
+        _ = ChartTimerLoopAsync(_chartTimerCts.Token);
+        Closed += (_, _) =>
+        {
+            _chartTimerCts.Cancel();
+            _chartTimerCts.Dispose();
+            _viewModel.Dispose();
+        };
+    }
+
+    private void UpdateCharts()
+    {
+        if (_viewModel.CurrentPage != "Stress Test") return;
+        _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
+        _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
+        _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
+        _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
+    }
+
+    private async Task ChartTimerLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+                DispatcherQueue.TryEnqueue(() => UpdateCharts());
+        }
+        catch (OperationCanceledException) { }
     }
 
     private void BuildShell()
@@ -721,17 +746,23 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(_storageTelemetryChart);
 
         _storageStressState.Text = "Pronto para testar Storage";
-        _storageStressMetrics.Text = "Arquivo temporário de 1 GB • lotes de 64 KB";
+        _storageStressMetrics.Text = "Arquivo temporário de 4 GB • 16 streams • leitura com NO_BUFFERING";
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        _storageStressStart = new Button { Content = "Iniciar teste de Storage", HorizontalAlignment = HorizontalAlignment.Left };
+        _storageWriteStart = new Button { Content = "Testar Escrita", HorizontalAlignment = HorizontalAlignment.Left };
+        _storageReadStart = new Button { Content = "Testar Leitura", HorizontalAlignment = HorizontalAlignment.Left };
         _storageStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
-        _storageStressStart.Click += async (_, _) =>
+        _storageWriteStart.Click += async (_, _) =>
         {
-            await _viewModel.StartStorageStressAsync(test.DefaultDuration);
+            await _viewModel.StartStorageWriteStressAsync(test.DefaultDuration);
+        };
+        _storageReadStart.Click += async (_, _) =>
+        {
+            await _viewModel.StartStorageReadStressAsync(test.DefaultDuration);
         };
         _storageStressStop.Click += (_, _) => _viewModel.StopStorageStress();
-        actions.Children.Add(_storageStressStart);
+        actions.Children.Add(_storageWriteStart);
+        actions.Children.Add(_storageReadStart);
         actions.Children.Add(_storageStressStop);
         stack.Children.Add(actions);
         UpdateStorageStressUi();
@@ -740,17 +771,18 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStorageStressUi()
     {
-        if (_storageStressState is null || _storageStressMetrics is null || _storageStressStart is null || _storageStressStop is null) return;
+        if (_storageStressState is null || _storageStressMetrics is null || _storageWriteStart is null || _storageReadStart is null || _storageStressStop is null) return;
 
         var running = _viewModel.StorageStressStatus == StressStatus.Running;
         var cancelling = _viewModel.StorageStressStatus == StressStatus.Cancelling;
+        var mode = _viewModel.StorageStressMode;
         var metrics = _viewModel.StorageStressMetrics;
         _storageStressState.Text = _viewModel.StorageStressStatus switch
         {
-            StressStatus.Running => "Estressando Storage...",
+            StressStatus.Running => mode == StorageTestMode.Write ? "Escrevendo..." : "Lendo...",
             StressStatus.Cancelling => "Cancelando...",
-            StressStatus.Completed => "Storage OK — sem erros",
-            StressStatus.Cancelled => "Teste de Storage cancelado",
+            StressStatus.Completed => "Concluído",
+            StressStatus.Cancelled => "Cancelado",
             StressStatus.Failed => $"Falha! {metrics?.Errors ?? 0} erro(s)",
             _ => "Pronto para testar Storage"
         };
@@ -758,7 +790,8 @@ public sealed partial class MainWindow : Window
             ? "Aguardando início"
             : $"{metrics.Elapsed:mm\\:ss}  •  {metrics.ProgressPercent:0.0}%  •  " +
               $"{metrics.ThroughputMBs:0.0} MB/s  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
-        _storageStressStart.IsEnabled = !running && !cancelling;
+        _storageWriteStart.IsEnabled = !running && !cancelling;
+        _storageReadStart.IsEnabled = !running && !cancelling;
         _storageStressStop.IsEnabled = running || cancelling;
     }
 

@@ -35,6 +35,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private StressStatus _memoryStressStatus = StressStatus.NotStarted;
     private StorageStressMetrics? _storageStressMetrics;
     private StressStatus _storageStressStatus = StressStatus.NotStarted;
+    private StorageTestMode _storageStressMode = StorageTestMode.Write;
 
     public string CurrentPage { get => _currentPage; private set => SetProperty(ref _currentPage, value); }
     public HardwareSnapshot Snapshot { get => _snapshot; private set => SetProperty(ref _snapshot, value); }
@@ -49,6 +50,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public StressStatus MemoryStressStatus { get => _memoryStressStatus; private set => SetProperty(ref _memoryStressStatus, value); }
     public StorageStressMetrics? StorageStressMetrics { get => _storageStressMetrics; private set => SetProperty(ref _storageStressMetrics, value); }
     public StressStatus StorageStressStatus { get => _storageStressStatus; private set => SetProperty(ref _storageStressStatus, value); }
+    public StorageTestMode StorageStressMode { get => _storageStressMode; private set => SetProperty(ref _storageStressMode, value); }
     public string GpuBackendName => _gpuStressEngine.BackendName;
     public bool IsGpuStressAvailable => _gpuStressEngine.IsAvailable;
     public bool IsVramTestAvailable => _vramTest.IsAvailable;
@@ -88,7 +90,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var mem = GetMemoryStatus();
             var usedGb = (mem.ullTotalPhys - mem.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
             var totalGb = mem.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
-            Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature, StorageTemperature = snapshot.StorageTemperature, StorageLoad = snapshot.StorageLoad };
+            Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature, StorageTemperature = snapshot.StorageTemperature, StorageLoad = snapshot.StorageLoad, StorageReadMBs = snapshot.StorageReadMBs, StorageWriteMBs = snapshot.StorageWriteMBs };
             Status = $"Dados atualizados às {Snapshot.CapturedAt:HH:mm:ss}";
         }
         catch (Exception ex) { Status = $"Sensores indisponíveis: {ex.Message}"; }
@@ -241,42 +243,77 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _memoryStressCancellation?.Cancel();
     }
 
-    public async Task StartStorageStressAsync(TimeSpan duration)
+    public async Task StartStorageWriteStressAsync(TimeSpan duration)
     {
         if (StorageStressStatus == StressStatus.Running) return;
 
         _storageStressCancellation?.Dispose();
         _storageStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
         StorageStressMetrics = new StorageStressMetrics(TimeSpan.Zero, duration, 0, 0, 0, 0);
+        StorageStressMode = StorageTestMode.Write;
         StorageStressStatus = StressStatus.Running;
-        Status = $"Teste de Storage iniciado — {1024} MB em lotes de 64 KB.";
+        Status = "Teste de Escrita iniciado — 4096 MB com 16 streams, WriteThrough.";
 
         try
         {
             var tempDir = Path.Combine(Path.GetTempPath(), "EMEDiagnostics");
             Directory.CreateDirectory(tempDir);
             await _storageStressEngine.RunAsync(
-                new StorageStressOptions(duration, 1024, tempDir),
+                new StorageStressOptions(duration, 4096, tempDir, StorageTestMode.Write),
                 _storageStressCancellation.Token);
             StorageStressStatus = StressStatus.Completed;
-            Status = "Teste de Storage concluído com sucesso.";
+            Status = "Teste de Escrita concluído.";
         }
         catch (OperationCanceledException)
         {
             StorageStressStatus = StressStatus.Cancelled;
-            Status = "Teste de Storage cancelado.";
+            Status = "Teste de Escrita cancelado.";
         }
         catch (Exception exception)
         {
             StorageStressStatus = StressStatus.Failed;
-            Status = $"Falha no teste de Storage: {exception.Message}";
+            Status = $"Falha no teste de Escrita: {exception.Message}";
+        }
+    }
+
+    public async Task StartStorageReadStressAsync(TimeSpan duration)
+    {
+        if (StorageStressStatus == StressStatus.Running) return;
+
+        _storageStressCancellation?.Dispose();
+        _storageStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
+        StorageStressMetrics = new StorageStressMetrics(TimeSpan.Zero, duration, 0, 0, 0, 0);
+        StorageStressMode = StorageTestMode.Read;
+        StorageStressStatus = StressStatus.Running;
+        Status = "Teste de Leitura iniciado — 4096 MB com 16 streams, NO_BUFFERING.";
+
+        try
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "EMEDiagnostics");
+            Directory.CreateDirectory(tempDir);
+            await _storageStressEngine.RunAsync(
+                new StorageStressOptions(duration, 4096, tempDir, StorageTestMode.Read),
+                _storageStressCancellation.Token);
+            StorageStressStatus = StressStatus.Completed;
+            Status = "Teste de Leitura concluído.";
+        }
+        catch (OperationCanceledException)
+        {
+            StorageStressStatus = StressStatus.Cancelled;
+            Status = "Teste de Leitura cancelado.";
+        }
+        catch (Exception exception)
+        {
+            StorageStressStatus = StressStatus.Failed;
+            Status = $"Falha no teste de Leitura: {exception.Message}";
         }
     }
 
     public void StopStorageStress()
     {
         StorageStressStatus = StressStatus.Cancelling;
-        Status = "Cancelando teste de Storage...";
+        var modeName = StorageStressMode == StorageTestMode.Write ? "Escrita" : "Leitura";
+        Status = $"Cancelando teste de {modeName}...";
         _storageStressCancellation?.Cancel();
     }
 

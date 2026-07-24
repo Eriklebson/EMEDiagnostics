@@ -68,6 +68,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
                 .ThenBy(device => device.Name)
                 .ToArray();
 
+            var (storageReadMBs, storageWriteMBs) = FindStorageThroughput(all);
             return new HardwareSnapshot(
                 DateTimeOffset.Now,
                 ToMetric(cpu, "CPU não detectada"),
@@ -77,6 +78,8 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
                 FindMemoryTemperature(all),
                 FindStorageTemperature(all),
                 FindStorageLoad(all),
+                storageReadMBs,
+                storageWriteMBs,
                 fans,
                 devices);
         }
@@ -117,9 +120,28 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
 
     private static double? FindStorageLoad(IHardware[] all)
     {
-        return all.Where(x => x.HardwareType == HardwareType.Storage)
+        var sensors = all.Where(x => x.HardwareType == HardwareType.Storage)
             .SelectMany(x => x.Sensors)
-            .FirstOrDefault(x => x.SensorType == SensorType.Load && x.Value.HasValue)?.Value;
+            .Where(x => x.SensorType == SensorType.Load && x.Value.HasValue)
+            .ToArray();
+        var activity = sensors.FirstOrDefault(s =>
+            s.Name.Contains("Active", StringComparison.OrdinalIgnoreCase) ||
+            s.Name.Contains("Activity", StringComparison.OrdinalIgnoreCase));
+        if (activity?.Value.HasValue == true) return activity.Value;
+        return sensors.FirstOrDefault(s =>
+            !s.Name.Contains("Used", StringComparison.OrdinalIgnoreCase) &&
+            !s.Name.Contains("Percentage", StringComparison.OrdinalIgnoreCase))?.Value;
+    }
+
+    private static (double? ReadMBs, double? WriteMBs) FindStorageThroughput(IHardware[] all)
+    {
+        var sensors = all.Where(x => x.HardwareType == HardwareType.Storage)
+            .SelectMany(x => x.Sensors)
+            .Where(x => x.SensorType == SensorType.Throughput && x.Value.HasValue)
+            .ToArray();
+        var read = sensors.FirstOrDefault(s => s.Name.Contains("Read", StringComparison.OrdinalIgnoreCase))?.Value;
+        var write = sensors.FirstOrDefault(s => s.Name.Contains("Write", StringComparison.OrdinalIgnoreCase))?.Value;
+        return (read / (1024.0 * 1024.0), write / (1024.0 * 1024.0));
     }
 
     private static double? Find(IHardware hardware, SensorType type, params string[] priorities)

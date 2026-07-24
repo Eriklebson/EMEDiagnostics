@@ -29,6 +29,8 @@ public sealed record HardwareSnapshot(
     double? MemoryTemperature,
     double? StorageTemperature,
     double? StorageLoad,
+    double? StorageReadMBs,
+    double? StorageWriteMBs,
     IReadOnlyList<FanMetric> Fans,
     IReadOnlyList<HardwareDeviceSnapshot> Devices)
 {
@@ -38,6 +40,8 @@ public sealed record HardwareSnapshot(
         new("GPU não detectada", null, null, null, null),
         0,
         0,
+        null,
+        null,
         null,
         null,
         null,
