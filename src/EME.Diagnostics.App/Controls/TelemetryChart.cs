@@ -17,7 +17,7 @@ public sealed partial class TelemetryChart : Grid
     private readonly Dictionary<string, Series> _series;
     private TelemetryChartStyle _style = TelemetryChartStyle.Line;
 
-    public TelemetryChart()
+    public TelemetryChart(bool isGpu = false)
     {
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -28,17 +28,30 @@ public sealed partial class TelemetryChart : Grid
             legend.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         legend.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         legend.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _series = new Dictionary<string, Series>
+
+        var series = new List<(string Key, string Label, string Color, int Index)>
         {
-            ["usage"] = CreateSeries(legend, "USO", "#4DA3FF", 0),
-            ["temperature"] = CreateSeries(legend, "TEMPERATURA", "#FF5C6C", 1),
-            ["clock"] = CreateSeries(legend, "CLOCK", "#A970FF", 2),
-            ["power"] = CreateSeries(legend, "POTÊNCIA", "#FFC857", 3),
-            ["fan"] = CreateSeries(legend, "CPU FAN", "#4CCBA0", 4),
-            ["cpuOpt"] = CreateSeries(legend, "CPU OPT", "#35C2D8", 5),
-            ["pump"] = CreateSeries(legend, "PUMP", "#FF8A4C", 6)
+            ("usage", "USO", "#4DA3FF", 0),
+            ("temperature", "TEMPERATURA", "#FF5C6C", 1),
+            ("clock", "CLOCK", "#A970FF", 2),
+            ("power", "POTÊNCIA", "#FFC857", 3)
         };
-        foreach (var series in _series.Values) series.Owner = this;
+        if (isGpu)
+        {
+            series.Add(("fan", "GPU FAN 1", "#4CCBA0", 4));
+            series.Add(("cpuOpt", "GPU FAN 2", "#35C2D8", 5));
+            series.Add(("pump", "GPU PUMP", "#FF8A4C", 6));
+        }
+        else
+        {
+            series.Add(("fan", "CPU FAN", "#4CCBA0", 4));
+            series.Add(("cpuOpt", "CPU OPT", "#35C2D8", 5));
+            series.Add(("pump", "PUMP", "#FF8A4C", 6));
+        }
+        _series = new Dictionary<string, Series>(series.Count);
+        foreach (var (key, label, color, index) in series)
+            _series[key] = CreateSeries(legend, label, color, index);
+        foreach (var s in _series.Values) s.Owner = this;
         Children.Add(legend);
 
         var plotHost = new Border
@@ -74,19 +87,33 @@ public sealed partial class TelemetryChart : Grid
         ApplySeriesVisibility(series, visible);
     }
 
-    public void AddSample(HardwareSnapshot snapshot)
+    public void AddSample(HardwareSnapshot snapshot, bool isGpu = false)
     {
-        Add("usage", snapshot.Cpu.Usage, 100, snapshot.Cpu.Usage, "%");
-        Add("temperature", snapshot.Cpu.Temperature, 110, snapshot.Cpu.Temperature, "°C");
-        Add("clock", snapshot.Cpu.Clock, 6_000, snapshot.Cpu.Clock, "MHz");
-        Add("power", snapshot.Cpu.Power, 300, snapshot.Cpu.Power, "W");
-        var cpuFans = snapshot.Fans.Where(fan => fan.Category.Equals("CPU", StringComparison.OrdinalIgnoreCase)).ToArray();
-        var fan = FindFan(cpuFans, "CPU Fan", "CPU_FAN");
-        var optional = FindFan(cpuFans, "CPU Optional", "CPU OPT", "CPU_OPT");
-        var pump = FindFan(cpuFans, "Pump", "AIO", "Water");
-        Add("fan", fan?.Rpm, 5_000, fan?.Rpm, "RPM");
-        Add("cpuOpt", optional?.Rpm, 5_000, optional?.Rpm, "RPM");
-        Add("pump", pump?.Rpm, 5_000, pump?.Rpm, "RPM");
+        var comp = isGpu ? snapshot.Gpu : snapshot.Cpu;
+        Add("usage", comp.Usage, 100, comp.Usage, "%");
+        Add("temperature", comp.Temperature, 110, comp.Temperature, "°C");
+        Add("clock", comp.Clock, 6_000, comp.Clock, "MHz");
+        Add("power", comp.Power, 300, comp.Power, "W");
+        if (isGpu)
+        {
+            var gpuFans = snapshot.Fans.Where(fan => !fan.Category.Equals("CPU", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var fan1 = gpuFans.ElementAtOrDefault(0);
+            var fan2 = gpuFans.ElementAtOrDefault(1);
+            var pump = gpuFans.FirstOrDefault(f => f.Name.Contains("pump", StringComparison.OrdinalIgnoreCase) || f.Name.Contains("water", StringComparison.OrdinalIgnoreCase));
+            Add("fan", fan1?.Rpm, 5_000, fan1?.Rpm, "RPM");
+            Add("cpuOpt", fan2?.Rpm, 5_000, fan2?.Rpm, "RPM");
+            Add("pump", pump?.Rpm, 5_000, pump?.Rpm, "RPM");
+        }
+        else
+        {
+            var cpuFans = snapshot.Fans.Where(fan => fan.Category.Equals("CPU", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var fan = FindFan(cpuFans, "CPU Fan", "CPU_FAN");
+            var optional = FindFan(cpuFans, "CPU Optional", "CPU OPT", "CPU_OPT");
+            var pump = FindFan(cpuFans, "Pump", "AIO", "Water");
+            Add("fan", fan?.Rpm, 5_000, fan?.Rpm, "RPM");
+            Add("cpuOpt", optional?.Rpm, 5_000, optional?.Rpm, "RPM");
+            Add("pump", pump?.Rpm, 5_000, pump?.Rpm, "RPM");
+        }
         Render();
     }
 

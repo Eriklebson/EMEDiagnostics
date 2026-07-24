@@ -19,6 +19,7 @@
     <ProjectReference Include="..\EME.Diagnostics.Services\EME.Diagnostics.Services.csproj" />
     <ProjectReference Include="..\EME.Diagnostics.Reporting\EME.Diagnostics.Reporting.csproj" />
     <ProjectReference Include="..\EME.Diagnostics.Shared\EME.Diagnostics.Shared.csproj" />
+    <ProjectReference Include="..\EME.Diagnostics.GpuEngine\EME.Diagnostics.GpuEngine.vcxproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

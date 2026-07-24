@@ -16,11 +16,12 @@ Toda comunicação, documentação e texto de interface deve ser escrito em port
 ## Fluxo obrigatório
 
 1. Leia `AGENTS.md` e a documentação relevante em `docs/`.
-2. Antes de corrigir um problema, diagnostique e confirme a causa raiz.
-3. Faça alterações pequenas e verificáveis.
-4. Compile e execute os testes disponíveis.
-5. Atualize a documentação e `CHANGELOG_AI.md`.
-6. Nunca faça operações Git sem autorização explícita do usuário.
+2. **ESTUDE antes de qualquer alteração**: Antes de modificar qualquer código, leia o código existente, identifique todos os problemas visuais/técnicos, pesquise referências e abordagens, e só então proponha um plano.
+3. Antes de corrigir um problema, diagnostique e confirme a causa raiz.
+4. Faça alterações pequenas e verificáveis.
+5. Compile e execute os testes disponíveis.
+6. Atualize a documentação e `CHANGELOG_AI.md`.
+7. Nunca faça operações Git sem autorização explícita do usuário.
 
 ## Performance
 

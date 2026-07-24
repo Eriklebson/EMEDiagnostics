@@ -16,6 +16,7 @@ TestResults/
 
 # Packages and publishing
 packages/
+vcpkg_installed/
 *.nupkg
 *.snupkg
 publish/
@@ -44,4 +45,3 @@ GeneratedFiles/
 Thumbs.db
 Desktop.ini
 .DS_Store
-

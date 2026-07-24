@@ -21,8 +21,18 @@ public sealed partial class MainWindow : Window
     private TextBlock? _cpuStressMetrics;
     private Button? _cpuStressStart;
     private Button? _cpuStressStop;
+    private TextBlock? _gpuStressState;
+    private TextBlock? _gpuStressMetrics;
+    private Button? _gpuStressStart;
+    private Button? _gpuStressStop;
+    private TextBlock? _vramTestState;
+    private TextBlock? _vramTestMetrics;
+    private Button? _vramTestStart;
+    private Button? _vramTestStop;
     private TelemetryChart? _cpuTelemetryChart;
+    private TelemetryChart? _gpuTelemetryChart;
     private DateTimeOffset _lastCpuChartSample = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastGpuChartSample = DateTimeOffset.MinValue;
 
     public MainWindow(MainViewModel viewModel, StressCatalogService stressCatalog)
     {
@@ -37,8 +47,11 @@ public sealed partial class MainWindow : Window
                 if (e.PropertyName == nameof(MainViewModel.CurrentPage)) ShowPage();
                 if (e.PropertyName == nameof(MainViewModel.Status)) _status.Text = _viewModel.Status;
                 if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Dashboard") UpdateDashboard();
-                if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Stress Test")
-                    _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
+        if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Stress Test")
+        {
+            _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
+            _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
+        }
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
                 {
@@ -50,6 +63,22 @@ public sealed partial class MainWindow : Window
                         _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
                     }
                 }
+        if ((e.PropertyName == nameof(MainViewModel.GpuStressStatus) || e.PropertyName == nameof(MainViewModel.GpuStressMetrics)) &&
+            _viewModel.CurrentPage == "Stress Test")
+        {
+            UpdateGpuStressUi();
+            if (_viewModel.GpuStressStatus is StressStatus.Running or StressStatus.Cancelling &&
+                DateTimeOffset.UtcNow - _lastGpuChartSample >= TimeSpan.FromSeconds(1))
+            {
+                _lastGpuChartSample = DateTimeOffset.UtcNow;
+                _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
+            }
+        }
+        if ((e.PropertyName == nameof(MainViewModel.VramTestStatus) || e.PropertyName == nameof(MainViewModel.VramTestMetrics)) &&
+            _viewModel.CurrentPage == "Stress Test")
+        {
+            UpdateVramTestUi();
+        }
             });
         };
         Activated += async (_, _) => { if (_viewModel.Snapshot == HardwareSnapshot.Empty) await _viewModel.StartAsync(); };
@@ -292,6 +321,11 @@ public sealed partial class MainWindow : Window
                 page.Children.Add(CpuStressCard(test));
                 continue;
             }
+            if (test.Target == StressTarget.Gpu)
+            {
+                page.Children.Add(GpuStressCard(test));
+                continue;
+            }
 
             var stack = new StackPanel { Spacing = 10 };
             stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
@@ -392,6 +426,147 @@ public sealed partial class MainWindow : Window
             : $"{metrics.Elapsed:mm\\:ss} / {metrics.Duration:mm\\:ss}  •  {metrics.ActiveWorkers} workers  •  {metrics.ProgressPercent:0.0}%";
         _cpuStressStart.IsEnabled = !running;
         _cpuStressStop.IsEnabled = running;
+    }
+
+    private Border GpuStressCard(StressTestDefinition test)
+    {
+        var stack = new StackPanel { Spacing = 10 };
+        stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        stack.Children.Add(new TextBlock
+        {
+            Text = test.Description,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = DesignTokens.Muted,
+            MinHeight = 42
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = $"BACKEND  {_viewModel.GpuBackendName}  •  COMPUTE SHADER  •  CONTÍNUO  •  LIMITE TÉRMICO  90 °C",
+            Foreground = DesignTokens.Accent,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        _gpuStressState = new TextBlock { Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold };
+        _gpuStressMetrics = new TextBlock { Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas"), FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        stack.Children.Add(_gpuStressState);
+        stack.Children.Add(_gpuStressMetrics);
+
+        _gpuTelemetryChart = new TelemetryChart(isGpu: true);
+        stack.Children.Add(new TextBlock { Text = "MODELO DO GRÁFICO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted, Margin = new Thickness(0, 6, 0, 0) });
+        var styleActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var styleButtons = new List<(Button Button, TelemetryChartStyle Style)>();
+        foreach (var option in new[]
+        {
+            ("Linha", TelemetryChartStyle.Line),
+            ("Área", TelemetryChartStyle.Area),
+            ("Degraus", TelemetryChartStyle.Step)
+        })
+        {
+            var button = new Button { Content = option.Item1, Padding = new Thickness(14, 7, 14, 7) };
+            button.Click += (_, _) => SelectGpuChartStyle(option.Item2);
+            styleButtons.Add((button, option.Item2));
+            styleActions.Children.Add(button);
+        }
+        stack.Children.Add(styleActions);
+        _gpuTelemetryChart.AddSample(_viewModel.Snapshot, isGpu: true);
+        stack.Children.Add(_gpuTelemetryChart);
+        SelectGpuChartStyle(TelemetryChartStyle.Line);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _gpuStressStart = new Button { Content = "Iniciar teste da GPU", HorizontalAlignment = HorizontalAlignment.Left };
+        _gpuStressStop = new Button { Content = "Cancelar", HorizontalAlignment = HorizontalAlignment.Left };
+        _gpuStressStart.Click += async (_, _) =>
+        {
+            await _viewModel.StartGpuStressAsync(TimeSpan.Zero);
+        };
+        _gpuStressStop.Click += (_, _) => _viewModel.StopGpuStress();
+        actions.Children.Add(_gpuStressStart);
+        actions.Children.Add(_gpuStressStop);
+        stack.Children.Add(actions);
+        UpdateGpuStressUi();
+
+        // ── VRAM Test ──
+        stack.Children.Add(new Border { Height = 1, Background = DesignTokens.Inset, Margin = new Thickness(0, 4, 0, 4) });
+        _vramTestState = new TextBlock { Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold };
+        _vramTestMetrics = new TextBlock { Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas"), FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        stack.Children.Add(_vramTestState);
+        stack.Children.Add(_vramTestMetrics);
+        var vramActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _vramTestStart = new Button { Content = "Testar VRAM", HorizontalAlignment = HorizontalAlignment.Left };
+        _vramTestStop = new Button { Content = "Cancelar", HorizontalAlignment = HorizontalAlignment.Left };
+        _vramTestStart.Click += async (_, _) =>
+        {
+            await _viewModel.StartVramTestAsync();
+        };
+        _vramTestStop.Click += (_, _) => _viewModel.StopVramTest();
+        vramActions.Children.Add(_vramTestStart);
+        vramActions.Children.Add(_vramTestStop);
+        stack.Children.Add(vramActions);
+        UpdateVramTestUi();
+
+        return Card(stack);
+
+        void SelectGpuChartStyle(TelemetryChartStyle style)
+        {
+            _gpuTelemetryChart?.SetStyle(style);
+            foreach (var item in styleButtons)
+            {
+                var selected = item.Style == style;
+                item.Button.Background = selected ? DesignTokens.Accent : DesignTokens.Inset;
+                item.Button.Foreground = selected ? DesignTokens.Background : DesignTokens.Text;
+            }
+        }
+    }
+
+    private void UpdateVramTestUi()
+    {
+        if (_vramTestState is null || _vramTestMetrics is null || _vramTestStart is null || _vramTestStop is null) return;
+
+        var running = _viewModel.VramTestStatus == StressStatus.Running;
+        var cancelling = _viewModel.VramTestStatus == StressStatus.Cancelling;
+        var metrics = _viewModel.VramTestMetrics;
+        _vramTestState.Text = _viewModel.VramTestStatus switch
+        {
+            StressStatus.Running => "Testando VRAM...",
+            StressStatus.Cancelling => "Cancelando teste de VRAM...",
+            StressStatus.Completed => "VRAM OK — sem erros",
+            StressStatus.Cancelled => "Teste de VRAM cancelado",
+            StressStatus.Failed => $"Falha na VRAM! {metrics?.Errors ?? 0} erro(s)",
+            _ => _viewModel.IsVramTestAvailable ? "Pronto para testar VRAM" : "Backend indisponível"
+        };
+        _vramTestMetrics.Text = metrics is null
+            ? "Aguardando início • 5 padrões • 90% da VRAM dedicada"
+            : $"{metrics.Elapsed:mm\\:ss}  •  {metrics.ProgressPercent:0.0}%  •  " +
+              $"{metrics.BytesTested / 1024d / 1024d / 1024d:0.00} GB testados  •  {metrics.Errors} erro(s)";
+        _vramTestStart.IsEnabled = !running && !cancelling && _viewModel.IsVramTestAvailable;
+        _vramTestStop.IsEnabled = running || cancelling;
+    }
+
+    private void UpdateGpuStressUi()
+    {
+        if (_gpuStressState is null || _gpuStressMetrics is null || _gpuStressStart is null || _gpuStressStop is null) return;
+
+        var running = _viewModel.GpuStressStatus == StressStatus.Running;
+        var cancelling = _viewModel.GpuStressStatus == StressStatus.Cancelling;
+        var metrics = _viewModel.GpuStressMetrics;
+        _gpuStressState.Text = _viewModel.GpuStressStatus switch
+        {
+            StressStatus.Running => "Executando carga na GPU...",
+            StressStatus.Cancelling => "Cancelando...",
+            StressStatus.Completed => "Concluído",
+            StressStatus.Cancelled => "Cancelado",
+            StressStatus.Failed => "Falhou",
+            _ => _viewModel.IsGpuStressAvailable ? "Pronto para iniciar" : "Backend indisponível"
+        };
+        _gpuStressMetrics.Text = metrics is null
+            ? "Aguardando início • métricas serão exibidas em tempo real"
+            : $"{metrics.Elapsed:mm\\:ss}  •  " +
+              $"{metrics.FramesPerSecond:0.0} dispatches/s  •  {metrics.FrameTimeMs:0.00} ms  •  " +
+              $"VRAM reservada {metrics.AllocatedVramBytes / 1024d / 1024d:0} MB  •  erros {metrics.Errors}";
+        _gpuStressStart.IsEnabled = !running && !cancelling && _viewModel.IsGpuStressAvailable;
+        _gpuStressStop.IsEnabled = running || cancelling;
     }
 
     private UIElement Hardware()
