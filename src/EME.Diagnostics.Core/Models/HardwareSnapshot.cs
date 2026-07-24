@@ -26,6 +26,7 @@ public sealed record HardwareSnapshot(
     ComponentMetric Gpu,
     double MemoryUsedGb,
     double MemoryTotalGb,
+    double? MemoryTemperature,
     IReadOnlyList<FanMetric> Fans,
     IReadOnlyList<HardwareDeviceSnapshot> Devices)
 {
@@ -35,6 +36,7 @@ public sealed record HardwareSnapshot(
         new("GPU não detectada", null, null, null, null),
         0,
         0,
+        null,
         Array.Empty<FanMetric>(),
         Array.Empty<HardwareDeviceSnapshot>());
 }

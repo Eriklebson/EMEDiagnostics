@@ -74,6 +74,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
                 ToMetric(gpu, "GPU não detectada"),
                 ReadMemory(memory, "Memory Used"),
                 ReadMemory(memory, "Memory Available") + ReadMemory(memory, "Memory Used"),
+                FindMemoryTemperature(all),
                 fans,
                 devices);
         }
@@ -93,6 +94,17 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
 
     private static double ReadMemory(IHardware? memory, string name) =>
         memory?.Sensors.FirstOrDefault(x => x.SensorType == SensorType.Data && x.Name.Contains(name, StringComparison.OrdinalIgnoreCase))?.Value ?? 0;
+
+    private static double? FindMemoryTemperature(IHardware[] all)
+    {
+        var memoryHardware = all.FirstOrDefault(x => x.HardwareType == HardwareType.Memory);
+        var temp = memoryHardware?.Sensors.FirstOrDefault(x => x.SensorType == SensorType.Temperature && x.Value.HasValue)?.Value;
+        if (temp.HasValue) return temp;
+        var dimm = all.SelectMany(x => x.Sensors)
+            .FirstOrDefault(x => x.SensorType == SensorType.Temperature && x.Name.Contains("DIMM", StringComparison.OrdinalIgnoreCase) && x.Value.HasValue);
+        return dimm?.Value ?? all.SelectMany(x => x.Sensors)
+            .FirstOrDefault(x => x.SensorType == SensorType.Temperature && x.Name.Contains("Memory", StringComparison.OrdinalIgnoreCase) && x.Value.HasValue)?.Value;
+    }
 
     private static double? Find(IHardware hardware, SensorType type, params string[] priorities)
     {

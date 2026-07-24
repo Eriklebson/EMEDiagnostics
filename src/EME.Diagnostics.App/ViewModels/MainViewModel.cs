@@ -76,7 +76,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            Snapshot = await _hardware.CaptureAsync(_cancellation.Token);
+            var snapshot = await _hardware.CaptureAsync(_cancellation.Token);
+            var mem = GetMemoryStatus();
+            var usedGb = (mem.ullTotalPhys - mem.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
+            var totalGb = mem.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
+            Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature };
             Status = $"Dados atualizados às {Snapshot.CapturedAt:HH:mm:ss}";
         }
         catch (Exception ex) { Status = $"Sensores indisponíveis: {ex.Message}"; }
@@ -229,6 +233,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _memoryStressCancellation?.Cancel();
     }
 
+    private static MEMORYSTATUSEX GetMemoryStatus()
+    {
+        var mem = new MEMORYSTATUSEX();
+        mem.dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>();
+        GlobalMemoryStatusEx(ref mem);
+        return mem;
+    }
+
+    private static int GetDefaultMemorySize()
+    {
+        var mem = GetMemoryStatus();
+        return (int)Math.Clamp((long)(mem.ullAvailPhys / (1024 * 1024)), 64, 65536);
+    }
+
     [System.Runtime.InteropServices.LibraryImport("kernel32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static partial bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
@@ -245,15 +263,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         public ulong ullTotalVirtual;
         public ulong ullAvailVirtual;
         public ulong ullAvailExtendedVirtual;
-    }
-
-    private static int GetDefaultMemorySize()
-    {
-        var mem = new MEMORYSTATUSEX();
-        mem.dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>();
-        if (GlobalMemoryStatusEx(ref mem))
-            return (int)Math.Clamp((long)(mem.ullAvailPhys / (1024 * 1024)), 64, 65536);
-        return 4096;
     }
 
     private void OnCpuStressMetricsUpdated(object? sender, CpuStressMetrics metrics) => CpuStressMetrics = metrics;

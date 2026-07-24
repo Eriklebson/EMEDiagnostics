@@ -35,8 +35,9 @@ public sealed partial class TelemetryChart : Grid
             series =
             [
                 ("usage", "USO", "#4DA3FF", 0),
-                ("used", "USADA", "#FF5C6C", 1),
-                ("free", "DISP", "#4CCBA0", 2),
+                ("temperature", "TEMP", "#FF5C6C", 1),
+                ("used", "USADA", "#A970FF", 2),
+                ("free", "DISP", "#4CCBA0", 3),
             ];
         }
         else
@@ -109,6 +110,7 @@ public sealed partial class TelemetryChart : Grid
             var free = total - used;
             var usagePct = total > 0 ? used / total * 100 : 0d;
             Add("usage", usagePct, 100, usagePct, "%");
+            Add("temperature", snapshot.MemoryTemperature, 110, snapshot.MemoryTemperature, "°C");
             Add("used", used, total, used, "GB");
             Add("free", free, total, free, "GB");
         }
