@@ -13,7 +13,7 @@ public enum TelemetryChartStyle { Line, Area, Step }
 public sealed partial class TelemetryChart : Grid
 {
     private const int MaximumSamples = 120;
-    private const double RightPadding = 40;
+    private const double RightPadding = 50;
     private readonly Canvas _plot = new() { Height = 230 };
     private readonly Dictionary<string, Series> _series;
     private TelemetryChartStyle _style = TelemetryChartStyle.Line;
@@ -108,7 +108,11 @@ public sealed partial class TelemetryChart : Grid
 
     public void Clear()
     {
-        foreach (var series in _series.Values) series.Values.Clear();
+        foreach (var series in _series.Values)
+        {
+            series.Values.Clear();
+            series.DisplayValues.Clear();
+        }
         Render();
     }
 
@@ -181,7 +185,12 @@ public sealed partial class TelemetryChart : Grid
     {
         var series = _series[key];
         series.Values.Add(value.HasValue ? Math.Clamp(value.Value / maximum * 100d, 0d, 100d) : null);
-        if (series.Values.Count > MaximumSamples) series.Values.RemoveAt(0);
+        series.DisplayValues.Add(displayValue.HasValue ? $"{displayValue.Value:0.#} {unit}" : null);
+        if (series.Values.Count > MaximumSamples)
+        {
+            series.Values.RemoveAt(0);
+            series.DisplayValues.RemoveAt(0);
+        }
         series.Value.Text = displayValue.HasValue ? $"{series.Label}: {displayValue.Value:0.#} {unit}" : $"{series.Label}: —";
     }
 
@@ -252,18 +261,18 @@ public sealed partial class TelemetryChart : Grid
                 Canvas.SetTop(marker, lastPoint.Value.Y - marker.Height / 2);
                 _plot.Children.Add(marker);
 
-                var lastValue = series.Values.LastOrDefault(v => v.HasValue);
-                if (lastValue.HasValue)
+                var lastDisplay = series.DisplayValues.LastOrDefault(v => v != null);
+                if (lastDisplay != null)
                 {
                     var valueLabel = new TextBlock
                     {
-                        Text = $"{lastValue.Value:F0}",
+                        Text = lastDisplay,
                         FontSize = 10,
                         FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                         Foreground = series.Color,
                         FontFamily = new FontFamily("Consolas")
                     };
-                    Canvas.SetLeft(valueLabel, Math.Min(lastPoint.Value.X - 14, plotWidth - 40));
+                    Canvas.SetLeft(valueLabel, lastPoint.Value.X - 14);
                     Canvas.SetTop(valueLabel, lastPoint.Value.Y - 18);
                     _plot.Children.Add(valueLabel);
                 }
@@ -300,7 +309,7 @@ public sealed partial class TelemetryChart : Grid
         Grid.SetRow(item, index / 4);
         legend.Children.Add(item);
 
-        var series = new Series(label, brush, value, checkSurface, checkGlyph, new List<double?>());
+        var series = new Series(label, brush, value, checkSurface, checkGlyph, new List<double?>(), new List<string?>());
         checkSurface.Tapped += (_, _) => series.Owner?.ApplySeriesVisibility(series, !series.Visible);
         return series;
     }
@@ -323,7 +332,7 @@ public sealed partial class TelemetryChart : Grid
         Render();
     }
 
-    private sealed class Series(string label, SolidColorBrush color, TextBlock value, Border toggle, FontIcon glyph, List<double?> values)
+    private sealed class Series(string label, SolidColorBrush color, TextBlock value, Border toggle, FontIcon glyph, List<double?> values, List<string?> displayValues)
     {
         public string Label { get; } = label;
         public SolidColorBrush Color { get; } = color;
@@ -331,6 +340,7 @@ public sealed partial class TelemetryChart : Grid
         public Border Toggle { get; } = toggle;
         public FontIcon Glyph { get; } = glyph;
         public List<double?> Values { get; } = values;
+        public List<string?> DisplayValues { get; } = displayValues;
         public bool Visible { get; set; } = true;
         public TelemetryChart? Owner { get; set; }
     }
