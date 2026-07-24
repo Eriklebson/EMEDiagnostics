@@ -9,8 +9,11 @@ public sealed class StorageStressEngine : IStorageStressEngine
     private int _running;
     private long _operations;
     private int _errors;
+    private long _writeOps;
+    private long _readOps;
 
-    private const int WriteSize = 64 * 1024; // 64 KB
+    private const int ChunkSize = 64 * 1024;
+    private const int ParallelStreams = 4;
 
     public bool IsRunning => Volatile.Read(ref _running) == 1;
     public event EventHandler<StorageStressMetrics>? MetricsUpdated;
@@ -26,89 +29,91 @@ public sealed class StorageStressEngine : IStorageStressEngine
 
         Interlocked.Exchange(ref _operations, 0);
         Interlocked.Exchange(ref _errors, 0);
-        using var durationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Interlocked.Exchange(ref _writeOps, 0);
+        Interlocked.Exchange(ref _readOps, 0);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var stopwatch = Stopwatch.StartNew();
         var unlimited = options.Duration == Timeout.InfiniteTimeSpan;
-        var filePath = Path.Combine(options.TargetDirectory, "eme_stress.tmp");
-        var buffer = new byte[WriteSize];
+        var filePathBase = Path.Combine(options.TargetDirectory, "eme_stress");
+        var files = Enumerable.Range(0, ParallelStreams).Select(i => $"{filePathBase}_{i}.tmp").ToArray();
+        var totalChunks = options.FileSizeMb * 1024L * 1024L / ChunkSize;
+        var chunkSizePerStream = totalChunks / ParallelStreams;
 
         try
         {
-            var totalChunks = options.FileSizeMb * 1024L * 1024L / WriteSize;
-            long writeOps = 0, readOps = 0;
-            var loopCount = 0L;
-
-            PublishMetrics(stopwatch.Elapsed, options, 0, 0);
-            using var metricsTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
-            while ((unlimited || stopwatch.Elapsed < options.Duration) &&
-                   await metricsTimer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            // Start continuous I/O on background thread
+            var ioTask = Task.Run(() =>
             {
-                // Write — sequential, flush on close to exercise disk
-                using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write,
-                           FileShare.Read, WriteSize, FileOptions.SequentialScan))
+                while (!cancellation.IsCancellationRequested &&
+                       (unlimited || stopwatch.Elapsed < options.Duration))
                 {
-                    for (int i = 0; i < totalChunks && (unlimited || stopwatch.Elapsed < options.Duration); i++)
+                    // Parallel write
+                    Parallel.For(0, ParallelStreams, fi =>
                     {
-                        Array.Fill(buffer, (byte)(i & 0xFF));
-                        await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
-                        Interlocked.Increment(ref _operations);
-                        if (cancellationToken.IsCancellationRequested) break;
-                    }
-                    await stream.FlushAsync().ConfigureAwait(false);
-                }
-                writeOps += totalChunks;
-
-                PublishMetrics(stopwatch.Elapsed, options, writeOps, readOps);
-                if (cancellationToken.IsCancellationRequested) break;
-
-                // Read back (cached is fine, we verify data)
-                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                           FileShare.Read, WriteSize, FileOptions.SequentialScan))
-                {
-                    int read, chunkIndex = 0;
-                    while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0 &&
-                           (unlimited || stopwatch.Elapsed < options.Duration))
-                    {
-                        for (int i = 0; i < read; i++)
+                        var buf = new byte[ChunkSize];
+                        using var fs = new FileStream(files[fi], FileMode.Create, FileAccess.Write, FileShare.Read, ChunkSize, FileOptions.SequentialScan);
+                        for (int i = 0; i < chunkSizePerStream; i++)
                         {
-                            if (buffer[i] != (byte)(chunkIndex & 0xFF))
-                            {
-                                Interlocked.Increment(ref _errors);
-                                break;
-                            }
+                            Array.Fill(buf, (byte)(i & 0xFF));
+                            fs.Write(buf, 0, ChunkSize);
+                            Interlocked.Increment(ref _operations);
                         }
-                        chunkIndex++;
-                        Interlocked.Increment(ref _operations);
-                        if (cancellationToken.IsCancellationRequested) break;
-                    }
-                }
-                readOps += totalChunks;
+                        fs.Flush();
+                    });
+                    Interlocked.Add(ref _writeOps, totalChunks);
 
-                loopCount++;
-                PublishMetrics(stopwatch.Elapsed, options, writeOps, readOps);
-                if (cancellationToken.IsCancellationRequested) break;
+                    if (cancellation.IsCancellationRequested) break;
+
+                    // Parallel read & verify
+                    Parallel.For(0, ParallelStreams, fi =>
+                    {
+                        var buf = new byte[ChunkSize];
+                        using var fs = new FileStream(files[fi], FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, FileOptions.SequentialScan);
+                        int read, chunkIndex = 0;
+                        while ((read = fs.Read(buf, 0, ChunkSize)) > 0)
+                        {
+                            for (int i = 0; i < read; i++)
+                                if (buf[i] != (byte)(chunkIndex & 0xFF)) { Interlocked.Increment(ref _errors); break; }
+                            chunkIndex++;
+                            Interlocked.Increment(ref _operations);
+                        }
+                    });
+                    Interlocked.Add(ref _readOps, totalChunks);
+                }
+            }, cancellation.Token);
+
+            // Publish metrics on timer while I/O runs
+            PublishMetrics(stopwatch.Elapsed, options);
+            using var metricsTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(200));
+            while (await metricsTimer.WaitForNextTickAsync(cancellation.Token).ConfigureAwait(false))
+            {
+                PublishMetrics(stopwatch.Elapsed, options);
+                if (ioTask.IsCompleted) break;
             }
 
+            await ioTask.ConfigureAwait(false);
             if (!unlimited)
-                PublishMetrics(options.Duration, options, writeOps, readOps);
+                PublishMetrics(options.Duration, options);
         }
         finally
         {
-            durationCancellation.Cancel();
+            cancellation.Cancel();
             stopwatch.Stop();
-            try { if (File.Exists(filePath)) File.Delete(filePath); }
-            catch { }
+            foreach (var f in files)
+                try { if (File.Exists(f)) File.Delete(f); } catch { }
             Interlocked.Exchange(ref _running, 0);
         }
     }
 
-    private void PublishMetrics(TimeSpan elapsed, StorageStressOptions options, long writeOps, long readOps)
+    private void PublishMetrics(TimeSpan elapsed, StorageStressOptions options)
     {
         var elapsedSecs = elapsed.TotalSeconds;
-        var totalOps = writeOps + readOps;
-        var totalExpected = options.FileSizeMb * 1024L * 1024L / WriteSize * 2L;
+        var w = Interlocked.Read(ref _writeOps);
+        var r = Interlocked.Read(ref _readOps);
+        var totalOps = w + r;
+        var totalExpected = options.FileSizeMb * 1024L * 1024L / ChunkSize * 2L;
         var progress = totalExpected > 0 ? Math.Clamp(totalOps * 100.0 / totalExpected, 0, 100) : 0;
-        var throughput = elapsedSecs > 0 ? totalOps * WriteSize / elapsedSecs / 1024d / 1024d : 0;
+        var throughput = elapsedSecs > 0 ? totalOps * ChunkSize / elapsedSecs / 1024d / 1024d : 0;
         MetricsUpdated?.Invoke(this, new StorageStressMetrics(
             elapsed,
             options.Duration,
