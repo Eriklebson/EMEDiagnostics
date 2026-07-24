@@ -249,7 +249,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _storageStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
         StorageStressMetrics = new StorageStressMetrics(TimeSpan.Zero, duration, 0, 0, 0, 0);
         StorageStressStatus = StressStatus.Running;
-        Status = $"Teste de Storage iniciado — escrevendo {64 * 1024 / 1024} MB/s em lotes.";
+        Status = $"Teste de Storage iniciado — {256} MB em lotes de 64 KB.";
 
         try
         {

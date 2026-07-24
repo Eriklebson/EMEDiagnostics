@@ -31,68 +31,84 @@ public sealed class StorageStressEngine : IStorageStressEngine
 
         try
         {
-            var totalBytes = options.FileSizeMb * 1024L * 1024L;
             var buffer = new byte[64 * 1024];
-            var totalWrites = (int)(totalBytes / buffer.Length);
-            var completedOps = 0L;
+            var totalChunks = options.FileSizeMb * 1024L * 1024L / buffer.Length;
+            long writeOps = 0, readOps = 0;
 
+            PublishMetrics(stopwatch.Elapsed, options, 0, 0);
             using var metricsTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
             while ((unlimited || stopwatch.Elapsed < options.Duration) &&
                    await metricsTimer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 // Write phase
-                using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length, FileOptions.Asynchronous))
+                using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read, buffer.Length, FileOptions.SequentialScan))
                 {
-                    for (int i = 0; i < totalWrites && (unlimited || stopwatch.Elapsed < options.Duration); i++)
+                    for (int i = 0; i < totalChunks && (unlimited || stopwatch.Elapsed < options.Duration); i++)
                     {
-                        Random.Shared.NextBytes(buffer);
+                        Array.Fill(buffer, (byte)i);
                         await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
                         Interlocked.Increment(ref _operations);
                         if (cancellationToken.IsCancellationRequested) break;
                     }
                 }
+                writeOps += totalChunks;
 
-                completedOps++;
-                PublishMetrics(stopwatch.Elapsed, options, completedOps, totalBytes);
+                // Sync before read
+                using (var fsync = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan))
+                {
+                    fsync.Flush();
+                }
+
+                PublishMetrics(stopwatch.Elapsed, options, writeOps, readOps);
                 if (cancellationToken.IsCancellationRequested) break;
 
                 // Read & verify phase
-                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.None, buffer.Length, FileOptions.Asynchronous))
+                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, buffer.Length, FileOptions.SequentialScan))
                 {
-                    var pos = 0L;
+                    var expected = 0;
                     int read;
                     while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0 &&
                            (unlimited || stopwatch.Elapsed < options.Duration))
                     {
-                        pos += read;
+                        for (int i = 0; i < read; i++)
+                        {
+                            if (buffer[i] != (byte)expected)
+                            {
+                                Interlocked.Increment(ref _errors);
+                                break;
+                            }
+                        }
+                        expected++;
                         Interlocked.Increment(ref _operations);
                         if (cancellationToken.IsCancellationRequested) break;
                     }
                 }
+                readOps += totalChunks;
 
-                completedOps++;
-                PublishMetrics(stopwatch.Elapsed, options, completedOps, totalBytes);
+                PublishMetrics(stopwatch.Elapsed, options, writeOps, readOps);
                 if (cancellationToken.IsCancellationRequested) break;
             }
 
             if (!unlimited)
-                PublishMetrics(options.Duration, options, completedOps, totalBytes);
+                PublishMetrics(options.Duration, options, writeOps, readOps);
         }
         finally
         {
             durationCancellation.Cancel();
             stopwatch.Stop();
             try { if (File.Exists(filePath)) File.Delete(filePath); }
-            catch { /* best effort */ }
+            catch { }
             Interlocked.Exchange(ref _running, 0);
         }
     }
 
-    private void PublishMetrics(TimeSpan elapsed, StorageStressOptions options, long completedOps, long totalBytes)
+    private void PublishMetrics(TimeSpan elapsed, StorageStressOptions options, long writeOps, long readOps)
     {
-        var progress = totalBytes > 0 ? Math.Clamp(completedOps * 100.0 / Math.Max(1, (long)(options.FileSizeMb * 1024L * 1024L / (64 * 1024) * 2)), 0, 100) : 0;
         var elapsedSecs = elapsed.TotalSeconds;
-        var throughput = elapsedSecs > 0 ? completedOps * 64L * 1024L / elapsedSecs / 1024d / 1024d : 0;
+        var totalOps = writeOps + readOps;
+        var totalExpected = options.FileSizeMb * 1024L * 1024L / (64 * 1024) * 2L;
+        var progress = totalExpected > 0 ? Math.Clamp(totalOps * 100.0 / totalExpected, 0, 100) : 0;
+        var throughput = elapsedSecs > 0 ? totalOps * 64L * 1024L / elapsedSecs / 1024d / 1024d : 0;
         MetricsUpdated?.Invoke(this, new StorageStressMetrics(
             elapsed,
             options.Duration,
