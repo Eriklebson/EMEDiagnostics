@@ -376,39 +376,119 @@ public sealed partial class MainWindow : Window
 
     private UIElement StressTest()
     {
-        var page = Page("Stress Test", "Execute cargas controladas e acompanhe o progresso em tempo real.");
-        foreach (var test in _stressCatalog.GetDefinitions())
+        var page = new StackPanel { Spacing = 16 };
+        page.Children.Add(new TextBlock { Text = "Stress Test", FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        page.Children.Add(new TextBlock
         {
-            if (test.Target == StressTarget.Cpu)
-            {
-                page.Children.Add(CpuStressCard(test));
-                continue;
-            }
-            if (test.Target == StressTarget.Gpu)
-            {
-                page.Children.Add(GpuStressCard(test));
-                continue;
-            }
-            if (test.Target == StressTarget.Memory)
-            {
-                page.Children.Add(MemoryStressCard(test));
-                continue;
-            }
-            if (test.Target == StressTarget.Storage)
-            {
-                page.Children.Add(StorageStressCard(test));
-                continue;
-            }
+            Text = "Execute cargas controladas e acompanhe o progresso em tempo real.",
+            FontSize = 13,
+            Foreground = DesignTokens.Muted,
+            Margin = new Thickness(0, -10, 0, 8)
+        });
 
-            var stack = new StackPanel { Spacing = 10 };
-            stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
-            stack.Children.Add(new TextBlock { Text = test.Description, TextWrapping = TextWrapping.Wrap, Foreground = DesignTokens.Muted });
-            stack.Children.Add(new TextBlock { Text = $"Duração padrão: {test.DefaultDuration.TotalMinutes:F0} min", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Accent });
-            var pending = new Button { Content = "Ainda não implementado", IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Left };
-            stack.Children.Add(pending);
-            page.Children.Add(Card(stack));
+        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
+
+        var definitions = _stressCatalog.GetDefinitions().ToList();
+        var nonCombined = definitions.Where(d => d.Target != StressTarget.Combined).ToList();
+        var combined = definitions.FirstOrDefault(d => d.Target == StressTarget.Combined);
+
+        var rowsForNonCombined = (int)Math.Ceiling(nonCombined.Count / 2d);
+        for (var i = 0; i < rowsForNonCombined; i++)
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        if (combined != null)
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        int columns = 2;
+        void SetColumns(int count)
+        {
+            grid.ColumnDefinitions.Clear();
+            for (var i = 0; i < count; i++)
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            columns = count;
         }
-        return Scroll(page);
+        SetColumns(2);
+
+        for (var index = 0; index < nonCombined.Count; index++)
+        {
+            var test = nonCombined[index];
+            var row = index / 2;
+            var col = index % 2;
+
+            Border card = test.Target switch
+            {
+                StressTarget.Cpu => CpuStressCard(test),
+                StressTarget.Gpu => GpuStressCard(test),
+                StressTarget.Memory => MemoryStressCard(test),
+                StressTarget.Storage => StorageStressCard(test),
+                _ => PlaceholderCard(test)
+            };
+            Grid.SetColumn(card, col);
+            Grid.SetRow(card, row);
+            grid.Children.Add(card);
+        }
+
+        if (combined != null)
+        {
+            var combinedCard = CombinedTestCard(combined);
+            Grid.SetColumn(combinedCard, 0);
+            Grid.SetColumnSpan(combinedCard, columns);
+            Grid.SetRow(combinedCard, rowsForNonCombined);
+            grid.Children.Add(combinedCard);
+        }
+
+        var scrollHost = new ScrollViewer
+        {
+            Content = grid,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(0, 0, 0, 20)
+        };
+
+        scrollHost.SizeChanged += (_, e) =>
+        {
+            var newCols = e.NewSize.Width < 800 ? 1 : 2;
+            if (newCols == columns) return;
+            SetColumns(newCols);
+            for (var i = 0; i < nonCombined.Count; i++)
+            {
+                var newRow = i / newCols;
+                var newCol = i % newCols;
+                if (grid.Children[i] is FrameworkElement child)
+                {
+                    Grid.SetColumn(child, newCol);
+                    Grid.SetRow(child, newRow);
+                }
+            }
+            if (combined != null && grid.Children[^1] is FrameworkElement combinedElem)
+            {
+                Grid.SetColumnSpan(combinedElem, newCols);
+                Grid.SetRow(combinedElem, (int)Math.Ceiling(nonCombined.Count / (double)newCols));
+            }
+        };
+
+        page.Children.Add(scrollHost);
+        return page;
+    }
+
+    private static Border PlaceholderCard(StressTestDefinition test)
+    {
+        var stack = new StackPanel { Spacing = 10 };
+        stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        stack.Children.Add(new TextBlock { Text = test.Description, TextWrapping = TextWrapping.Wrap, Foreground = DesignTokens.Muted });
+        stack.Children.Add(new TextBlock { Text = $"Duração padrão: {test.DefaultDuration.TotalMinutes:F0} min", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Accent });
+        stack.Children.Add(new Button { Content = "Ainda não implementado", IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Left });
+        return Card(stack);
+    }
+
+    private static Border CombinedTestCard(StressTestDefinition test)
+    {
+        var stack = new StackPanel { Spacing = 10 };
+        stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        stack.Children.Add(new TextBlock { Text = test.Description, TextWrapping = TextWrapping.Wrap, Foreground = DesignTokens.Muted });
+        stack.Children.Add(new TextBlock { Text = $"Duração padrão: {test.DefaultDuration.TotalMinutes:F0} min", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Accent });
+        stack.Children.Add(new Button { Content = "Ainda não implementado", IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Left });
+        return Card(stack);
     }
 
     private Border CpuStressCard(StressTestDefinition test)
