@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Threading;
 using EME.Diagnostics.App.Theme;
 using EME.Diagnostics.App.Controls;
 using EME.Diagnostics.App.ViewModels;
@@ -29,10 +31,16 @@ public sealed partial class MainWindow : Window
     private TextBlock? _vramTestMetrics;
     private Button? _vramTestStart;
     private Button? _vramTestStop;
+    private TextBlock? _memoryStressState;
+    private TextBlock? _memoryStressMetrics;
+    private Button? _memoryStressStart;
+    private Button? _memoryStressStop;
     private TelemetryChart? _cpuTelemetryChart;
     private TelemetryChart? _gpuTelemetryChart;
+    private TelemetryChart? _memoryTelemetryChart;
     private DateTimeOffset _lastCpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastGpuChartSample = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastMemoryChartSample = DateTimeOffset.MinValue;
 
     public MainWindow(MainViewModel viewModel, StressCatalogService stressCatalog)
     {
@@ -51,6 +59,7 @@ public sealed partial class MainWindow : Window
         {
             _cpuTelemetryChart?.AddSample(_viewModel.Snapshot);
             _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
+            _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
         }
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
@@ -78,6 +87,17 @@ public sealed partial class MainWindow : Window
             _viewModel.CurrentPage == "Stress Test")
         {
             UpdateVramTestUi();
+        }
+        if ((e.PropertyName == nameof(MainViewModel.MemoryStressStatus) || e.PropertyName == nameof(MainViewModel.MemoryStressMetrics)) &&
+            _viewModel.CurrentPage == "Stress Test")
+        {
+            UpdateMemoryStressUi();
+            if (_viewModel.MemoryStressStatus is StressStatus.Running or StressStatus.Cancelling &&
+                DateTimeOffset.UtcNow - _lastMemoryChartSample >= TimeSpan.FromSeconds(1))
+            {
+                _lastMemoryChartSample = DateTimeOffset.UtcNow;
+                _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
+            }
         }
             });
         };
@@ -326,6 +346,11 @@ public sealed partial class MainWindow : Window
                 page.Children.Add(GpuStressCard(test));
                 continue;
             }
+            if (test.Target == StressTarget.Memory)
+            {
+                page.Children.Add(MemoryStressCard(test));
+                continue;
+            }
 
             var stack = new StackPanel { Spacing = 10 };
             stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
@@ -542,6 +567,113 @@ public sealed partial class MainWindow : Window
               $"{metrics.BytesTested / 1024d / 1024d / 1024d:0.00} GB testados  •  {metrics.Errors} erro(s)";
         _vramTestStart.IsEnabled = !running && !cancelling && _viewModel.IsVramTestAvailable;
         _vramTestStop.IsEnabled = running || cancelling;
+    }
+
+    private Border MemoryStressCard(StressTestDefinition test)
+    {
+        var stack = new StackPanel { Spacing = 10 };
+        stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        stack.Children.Add(new TextBlock
+        {
+            Text = test.Description,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = DesignTokens.Muted,
+            MinHeight = 42
+        });
+
+        _memoryStressState = new TextBlock { Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold };
+        _memoryStressMetrics = new TextBlock { Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas"), FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        stack.Children.Add(_memoryStressState);
+        stack.Children.Add(_memoryStressMetrics);
+
+        _memoryTelemetryChart = new TelemetryChart(isMemory: true);
+        _memoryTelemetryChart.AddSample(_viewModel.Snapshot, isMemory: true);
+        stack.Children.Add(_memoryTelemetryChart);
+
+        // Duration selector
+        var durationRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 4, 0, 4) };
+        var durationCombo = new ComboBox { SelectedIndex = 2, MinWidth = 140 };
+        var durationItems = new (string Label, TimeSpan Value)[]
+        {
+            ("30 segundos", TimeSpan.FromSeconds(30)),
+            ("1 minuto", TimeSpan.FromMinutes(1)),
+            ("2 minutos", TimeSpan.FromMinutes(2)),
+            ("5 minutos", TimeSpan.FromMinutes(5)),
+            ("10 minutos", TimeSpan.FromMinutes(10)),
+            ("30 minutos", TimeSpan.FromMinutes(30)),
+            ("Ilimitado", Timeout.InfiniteTimeSpan),
+            ("Personalizado", TimeSpan.Zero),
+        };
+        foreach (var (label, val) in durationItems)
+            durationCombo.Items.Add(new ComboBoxItem { Content = label, Tag = val });
+        var customMinutesBox = new TextBox
+        {
+            PlaceholderText = "min",
+            Width = 80,
+            Visibility = Visibility.Collapsed
+        };
+        durationCombo.SelectionChanged += (_, _) =>
+        {
+            customMinutesBox.Visibility = durationCombo.SelectedIndex == 7 ? Visibility.Visible : Visibility.Collapsed;
+        };
+        durationRow.Children.Add(durationCombo);
+        durationRow.Children.Add(customMinutesBox);
+        stack.Children.Add(new TextBlock { Text = "DURAÇÃO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted });
+        stack.Children.Add(durationRow);
+
+        var currentDuration = TimeSpan.FromMinutes(2);
+
+        _memoryStressState.Text = "Pronto para testar RAM";
+        _memoryStressMetrics.Text = $"Padrões • {Environment.ProcessorCount} threads • 100% da RAM disponível";
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _memoryStressStart = new Button { Content = "Iniciar teste de RAM", HorizontalAlignment = HorizontalAlignment.Left };
+        _memoryStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
+        _memoryStressStart.Click += async (_, _) =>
+        {
+            var selected = (ComboBoxItem)durationCombo.SelectedItem;
+            var value = (TimeSpan)selected.Tag;
+            if (value == TimeSpan.Zero)
+            {
+                if (!int.TryParse(customMinutesBox.Text, out var mins) || mins < 1)
+                {
+                    return;
+                }
+                value = TimeSpan.FromMinutes(mins);
+            }
+            currentDuration = value;
+            await _viewModel.StartMemoryStressAsync(currentDuration);
+        };
+        _memoryStressStop.Click += (_, _) => _viewModel.StopMemoryStress();
+        actions.Children.Add(_memoryStressStart);
+        actions.Children.Add(_memoryStressStop);
+        stack.Children.Add(actions);
+        UpdateMemoryStressUi();
+        return Card(stack);
+    }
+
+    private void UpdateMemoryStressUi()
+    {
+        if (_memoryStressState is null || _memoryStressMetrics is null || _memoryStressStart is null || _memoryStressStop is null) return;
+
+        var running = _viewModel.MemoryStressStatus == StressStatus.Running;
+        var cancelling = _viewModel.MemoryStressStatus == StressStatus.Cancelling;
+        var metrics = _viewModel.MemoryStressMetrics;
+        _memoryStressState.Text = _viewModel.MemoryStressStatus switch
+        {
+            StressStatus.Running => "Estressando RAM...",
+            StressStatus.Cancelling => "Cancelando...",
+            StressStatus.Completed => "RAM OK — sem erros",
+            StressStatus.Cancelled => "Teste de RAM cancelado",
+            StressStatus.Failed => $"Falha! {metrics?.Errors ?? 0} erro(s)",
+            _ => "Pronto para testar RAM"
+        };
+        _memoryStressMetrics.Text = metrics is null
+            ? "Aguardando início"
+            : $"{metrics.Elapsed:mm\\:ss}  •  {metrics.ProgressPercent:0.0}%  •  " +
+              $"{metrics.AllocatedMb} MB  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
+        _memoryStressStart.IsEnabled = !running && !cancelling;
+        _memoryStressStop.IsEnabled = running || cancelling;
     }
 
     private void UpdateGpuStressUi()
