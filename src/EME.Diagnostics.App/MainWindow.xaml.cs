@@ -44,6 +44,9 @@ public sealed partial class MainWindow : Window
     private Button? _storageWriteStart;
     private Button? _storageReadStart;
     private Button? _storageStressStop;
+    private TextBlock? _combinedStressState;
+    private Button? _combinedStressStart;
+    private Button? _combinedStressStop;
     private DateTimeOffset _lastCpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastGpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastMemoryChartSample = DateTimeOffset.MinValue;
@@ -116,6 +119,8 @@ public sealed partial class MainWindow : Window
                 _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
             }
         }
+        if (e.PropertyName == nameof(MainViewModel.CombinedStressStatus) && _viewModel.CurrentPage == "Stress Test")
+            UpdateCombinedStressUi();
             });
         };
         Activated += async (_, _) => { if (_viewModel.Snapshot == HardwareSnapshot.Empty) await _viewModel.StartAsync(); };
@@ -376,26 +381,42 @@ public sealed partial class MainWindow : Window
 
     private UIElement StressTest()
     {
-        var page = new StackPanel { Spacing = 16 };
+        var page = new Grid();
+        page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        page.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
         page.Children.Add(new TextBlock { Text = "Stress Test", FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
-        page.Children.Add(new TextBlock
+        var subtitle = new TextBlock
         {
             Text = "Execute cargas controladas e acompanhe o progresso em tempo real.",
             FontSize = 13,
             Foreground = DesignTokens.Muted,
             Margin = new Thickness(0, -10, 0, 8)
-        });
+        };
+        Grid.SetRow(subtitle, 1);
+        page.Children.Add(subtitle);
 
-        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
+        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16, Margin = new Thickness(0, 0, 0, 20) };
 
         var definitions = _stressCatalog.GetDefinitions().ToList();
-        var nonCombined = definitions.Where(d => d.Target != StressTarget.Combined).ToList();
         var combined = definitions.FirstOrDefault(d => d.Target == StressTarget.Combined);
+        var nonCombined = definitions.Where(d => d.Target != StressTarget.Combined).ToList();
 
-        var rowsForNonCombined = (int)Math.Ceiling(nonCombined.Count / 2d);
-        for (var i = 0; i < rowsForNonCombined; i++)
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        // Combined always at top, spanning full width
         if (combined != null)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var combinedCard = CombinedTestCard(combined);
+            Grid.SetColumn(combinedCard, 0);
+            Grid.SetColumnSpan(combinedCard, 2);
+            Grid.SetRow(combinedCard, 0);
+            grid.Children.Add(combinedCard);
+        }
+
+        // Non-combined tests in 2-column grid below
+        var totalRows = (int)Math.Ceiling(nonCombined.Count / 2d);
+        for (var i = 0; i < totalRows; i++)
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         int columns = 2;
@@ -411,7 +432,7 @@ public sealed partial class MainWindow : Window
         for (var index = 0; index < nonCombined.Count; index++)
         {
             var test = nonCombined[index];
-            var row = index / 2;
+            var row = index / 2 + 1;
             var col = index % 2;
 
             Border card = test.Target switch
@@ -427,43 +448,31 @@ public sealed partial class MainWindow : Window
             grid.Children.Add(card);
         }
 
-        if (combined != null)
-        {
-            var combinedCard = CombinedTestCard(combined);
-            Grid.SetColumn(combinedCard, 0);
-            Grid.SetColumnSpan(combinedCard, columns);
-            Grid.SetRow(combinedCard, rowsForNonCombined);
-            grid.Children.Add(combinedCard);
-        }
-
         var scrollHost = new ScrollViewer
         {
             Content = grid,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Margin = new Thickness(0, 0, 0, 20)
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
+        Grid.SetRow(scrollHost, 2);
 
         scrollHost.SizeChanged += (_, e) =>
         {
             var newCols = e.NewSize.Width < 800 ? 1 : 2;
             if (newCols == columns) return;
             SetColumns(newCols);
+            var startIdx = combined != null ? 1 : 0;
             for (var i = 0; i < nonCombined.Count; i++)
             {
-                var newRow = i / newCols;
+                var newRow = i / newCols + startIdx;
                 var newCol = i % newCols;
-                if (grid.Children[i] is FrameworkElement child)
+                var childIdx = startIdx + i;
+                if (grid.Children[childIdx] is FrameworkElement child)
                 {
                     Grid.SetColumn(child, newCol);
                     Grid.SetRow(child, newRow);
                 }
-            }
-            if (combined != null && grid.Children[^1] is FrameworkElement combinedElem)
-            {
-                Grid.SetColumnSpan(combinedElem, newCols);
-                Grid.SetRow(combinedElem, (int)Math.Ceiling(nonCombined.Count / (double)newCols));
             }
         };
 
@@ -481,13 +490,28 @@ public sealed partial class MainWindow : Window
         return Card(stack);
     }
 
-    private static Border CombinedTestCard(StressTestDefinition test)
+    private Border CombinedTestCard(StressTestDefinition test)
     {
         var stack = new StackPanel { Spacing = 10 };
         stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
         stack.Children.Add(new TextBlock { Text = test.Description, TextWrapping = TextWrapping.Wrap, Foreground = DesignTokens.Muted });
-        stack.Children.Add(new TextBlock { Text = $"Duração padrão: {test.DefaultDuration.TotalMinutes:F0} min", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Accent });
-        stack.Children.Add(new Button { Content = "Ainda não implementado", IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Left });
+
+        _combinedStressState = new TextBlock { Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold };
+        stack.Children.Add(_combinedStressState);
+        _combinedStressState.Text = "Pronto — inicia CPU + GPU + RAM + Storage (leitura) simultaneamente.";
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _combinedStressStart = new Button { Content = "Iniciar Combined Test", HorizontalAlignment = HorizontalAlignment.Left };
+        _combinedStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
+        _combinedStressStart.Click += async (_, _) =>
+        {
+            await _viewModel.StartCombinedStressAsync(test.DefaultDuration);
+        };
+        _combinedStressStop.Click += (_, _) => _viewModel.StopCombinedStress();
+        actions.Children.Add(_combinedStressStart);
+        actions.Children.Add(_combinedStressStop);
+        stack.Children.Add(actions);
+        UpdateCombinedStressUi();
         return Card(stack);
     }
 
@@ -577,7 +601,7 @@ public sealed partial class MainWindow : Window
         _cpuStressMetrics.Text = metrics is null
             ? $"{Environment.ProcessorCount} processadores lógicos disponíveis"
             : $"{metrics.Elapsed:mm\\:ss} / {metrics.Duration:mm\\:ss}  •  {metrics.ActiveWorkers} workers  •  {metrics.ProgressPercent:0.0}%";
-        _cpuStressStart.IsEnabled = !running;
+        _cpuStressStart.IsEnabled = !running && _viewModel.CombinedStressStatus != StressStatus.Running;
         _cpuStressStop.IsEnabled = running;
     }
 
@@ -800,7 +824,7 @@ public sealed partial class MainWindow : Window
             ? "Aguardando início"
             : $"{metrics.Elapsed:mm\\:ss}  •  {metrics.ProgressPercent:0.0}%  •  " +
               $"{metrics.AllocatedMb} MB  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
-        _memoryStressStart.IsEnabled = !running && !cancelling;
+        _memoryStressStart.IsEnabled = !running && !cancelling && _viewModel.CombinedStressStatus != StressStatus.Running;
         _memoryStressStop.IsEnabled = running || cancelling;
     }
 
@@ -870,9 +894,34 @@ public sealed partial class MainWindow : Window
             ? "Aguardando início"
             : $"{metrics.Elapsed:mm\\:ss}  •  {metrics.ProgressPercent:0.0}%  •  " +
               $"{metrics.ThroughputMBs:0.0} MB/s  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
-        _storageWriteStart.IsEnabled = !running && !cancelling;
-        _storageReadStart.IsEnabled = !running && !cancelling;
+        _storageWriteStart.IsEnabled = !running && !cancelling && _viewModel.CombinedStressStatus != StressStatus.Running;
+        _storageReadStart.IsEnabled = !running && !cancelling && _viewModel.CombinedStressStatus != StressStatus.Running;
         _storageStressStop.IsEnabled = running || cancelling;
+    }
+
+    private void UpdateCombinedStressUi()
+    {
+        if (_combinedStressState is null || _combinedStressStart is null || _combinedStressStop is null) return;
+
+        var running = _viewModel.CombinedStressStatus == StressStatus.Running;
+        var cancelling = _viewModel.CombinedStressStatus == StressStatus.Cancelling;
+        _combinedStressState.Text = _viewModel.CombinedStressStatus switch
+        {
+            StressStatus.Running => "Executando todos os testes simultaneamente...",
+            StressStatus.Cancelling => "Cancelando...",
+            StressStatus.Completed => "Combined Test concluído.",
+            StressStatus.Cancelled => "Combined Test cancelado.",
+            StressStatus.Failed => "Falha no Combined Test.",
+            _ => "Pronto — inicia CPU + GPU + RAM + Storage (leitura) simultaneamente."
+        };
+        _combinedStressStart.IsEnabled = !running && !cancelling;
+        _combinedStressStop.IsEnabled = running || cancelling;
+
+        // Refresh individual UIs to disable their start buttons when combined is running
+        UpdateCpuStressUi();
+        UpdateGpuStressUi();
+        UpdateMemoryStressUi();
+        UpdateStorageStressUi();
     }
 
     private void UpdateGpuStressUi()
@@ -896,7 +945,7 @@ public sealed partial class MainWindow : Window
             : $"{metrics.Elapsed:mm\\:ss}  •  " +
               $"{metrics.FramesPerSecond:0.0} dispatches/s  •  {metrics.FrameTimeMs:0.00} ms  •  " +
               $"VRAM reservada {metrics.AllocatedVramBytes / 1024d / 1024d:0} MB  •  erros {metrics.Errors}";
-        _gpuStressStart.IsEnabled = !running && !cancelling && _viewModel.IsGpuStressAvailable;
+        _gpuStressStart.IsEnabled = !running && !cancelling && _viewModel.IsGpuStressAvailable && _viewModel.CombinedStressStatus != StressStatus.Running;
         _gpuStressStop.IsEnabled = running || cancelling;
     }
 

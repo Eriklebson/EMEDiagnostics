@@ -36,6 +36,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private StorageStressMetrics? _storageStressMetrics;
     private StressStatus _storageStressStatus = StressStatus.NotStarted;
     private StorageTestMode _storageStressMode = StorageTestMode.Write;
+    private StressStatus _combinedStressStatus = StressStatus.NotStarted;
+    private CancellationTokenSource? _combinedStressCancellation;
 
     public string CurrentPage { get => _currentPage; private set => SetProperty(ref _currentPage, value); }
     public HardwareSnapshot Snapshot { get => _snapshot; private set => SetProperty(ref _snapshot, value); }
@@ -51,6 +53,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public StorageStressMetrics? StorageStressMetrics { get => _storageStressMetrics; private set => SetProperty(ref _storageStressMetrics, value); }
     public StressStatus StorageStressStatus { get => _storageStressStatus; private set => SetProperty(ref _storageStressStatus, value); }
     public StorageTestMode StorageStressMode { get => _storageStressMode; private set => SetProperty(ref _storageStressMode, value); }
+    public StressStatus CombinedStressStatus { get => _combinedStressStatus; private set => SetProperty(ref _combinedStressStatus, value); }
     public string GpuBackendName => _gpuStressEngine.BackendName;
     public bool IsGpuStressAvailable => _gpuStressEngine.IsAvailable;
     public bool IsVramTestAvailable => _vramTest.IsAvailable;
@@ -317,6 +320,52 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _storageStressCancellation?.Cancel();
     }
 
+    public async Task StartCombinedStressAsync(TimeSpan duration)
+    {
+        if (CombinedStressStatus == StressStatus.Running) return;
+
+        _combinedStressCancellation?.Dispose();
+        _combinedStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
+        CombinedStressStatus = StressStatus.Running;
+        Status = "Combined Test iniciado — todos os componentes sob carga simultânea.";
+
+        try
+        {
+            var tasks = new List<Task>
+            {
+                StartCpuStressAsync(duration),
+                StartGpuStressAsync(duration),
+                StartMemoryStressAsync(duration),
+                StartStorageReadStressAsync(duration),
+            };
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+            CombinedStressStatus = StressStatus.Completed;
+            Status = "Combined Test concluído.";
+        }
+        catch (OperationCanceledException)
+        {
+            CombinedStressStatus = StressStatus.Cancelled;
+            Status = "Combined Test cancelado.";
+        }
+        catch (Exception exception)
+        {
+            CombinedStressStatus = StressStatus.Failed;
+            Status = $"Falha no Combined Test: {exception.Message}";
+        }
+    }
+
+    public void StopCombinedStress()
+    {
+        CombinedStressStatus = StressStatus.Cancelling;
+        Status = "Cancelando Combined Test...";
+        _combinedStressCancellation?.Cancel();
+        StopCpuStress();
+        StopGpuStress();
+        StopMemoryStress();
+        StopStorageStress();
+    }
+
     private static MEMORYSTATUSEX GetMemoryStatus()
     {
         var mem = new MEMORYSTATUSEX();
@@ -374,6 +423,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _cpuStressCancellation?.Cancel();
         _gpuStressCancellation?.Cancel();
         _memoryStressCancellation?.Cancel();
+        _combinedStressCancellation?.Cancel();
         _storageStressCancellation?.Cancel();
         _vramTestCancellation?.Cancel();
         _cpuStressEngine.MetricsUpdated -= OnCpuStressMetricsUpdated;
@@ -388,6 +438,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _memoryStressCancellation?.Dispose();
         _storageStressCancellation?.Dispose();
         _vramTestCancellation?.Dispose();
+        _combinedStressCancellation?.Dispose();
         _gpuStressEngine.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _vramTest.Dispose();
         _cancellation.Dispose();
