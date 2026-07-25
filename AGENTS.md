@@ -21,7 +21,7 @@ Toda comunicação, documentação e texto de interface deve ser escrito em port
 4. Faça alterações pequenas e verificáveis.
 5. Compile e execute os testes disponíveis.
 6. Atualize a documentação e `CHANGELOG_AI.md`.
-7. Nunca faça operações Git sem autorização explícita do usuário.
+7. GIT: Só faça commit e push quando o usuário disser expressamente "pode subir", "sobe", "push" ou "commit". Caso contrário, não toque no Git.
 
 ## Performance
 

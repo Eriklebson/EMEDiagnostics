@@ -102,7 +102,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var usedGb = (mem.ullTotalPhys - mem.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
             var totalGb = mem.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
             Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature, StorageTemperature = snapshot.StorageTemperature, StorageLoad = snapshot.StorageLoad, StorageReadMBs = snapshot.StorageReadMBs, StorageWriteMBs = snapshot.StorageWriteMBs };
-            if (_dataCollector.SampleCount > 0) _dataCollector.AddSample(Snapshot);
+            if (_dataCollector.IsCollecting) _dataCollector.AddSample(Snapshot);
             Status = $"Dados atualizados às {Snapshot.CapturedAt:HH:mm:ss}";
         }
         catch (Exception ex) { Status = $"Sensores indisponíveis: {ex.Message}"; }

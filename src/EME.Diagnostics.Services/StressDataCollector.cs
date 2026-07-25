@@ -7,6 +7,7 @@ public sealed class StressDataCollector
 {
     private readonly IReportRepository _repository;
     private ReportTestType _testType;
+    private bool _isCollecting;
     private readonly List<HardwareSnapshot> _samples = [];
 
     public StressDataCollector(IReportRepository repository)
@@ -17,18 +18,20 @@ public sealed class StressDataCollector
     public void StartCollecting(ReportTestType testType)
     {
         _testType = testType;
+        _isCollecting = true;
         _samples.Clear();
     }
+
+    public bool IsCollecting => _isCollecting;
 
     public void AddSample(HardwareSnapshot snapshot)
     {
         _samples.Add(snapshot);
     }
 
-    public int SampleCount => _samples.Count;
-
     public async Task<long> SaveReportAsync(TimeSpan elapsed, string status, CancellationToken ct = default)
     {
+        _isCollecting = false;
         var entries = new List<ReportEntry>();
 
         if (_samples.Count > 0)
