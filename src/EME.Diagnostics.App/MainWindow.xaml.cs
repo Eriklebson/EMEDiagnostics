@@ -5,6 +5,7 @@ using EME.Diagnostics.App.Controls;
 using EME.Diagnostics.App.ViewModels;
 using EME.Diagnostics.Core.Models;
 using EME.Diagnostics.Services;
+using EME.Diagnostics.Shared;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -189,7 +190,7 @@ public sealed partial class MainWindow : Window
         foreach (var item in new[] { ("Dashboard", "\uE80F"), ("Stress Test", "\uE945"), ("Benchmark", "\uE9D9"), ("Hardware", "\uE950"), ("Relatórios", "\uE9F9"), ("Configurações", "\uE713") })
             panel.Children.Add(NavButton(item.Item1, item.Item2));
         panel.Children.Add(new Border { Height = 1, Background = DesignTokens.Border, Margin = new Thickness(8, 16, 8, 8) });
-        panel.Children.Add(new TextBlock { Text = "v0.1.0  •  Estrutura inicial", FontFamily = new FontFamily("Consolas"), FontSize = 10, Foreground = DesignTokens.Muted, Margin = new Thickness(8, 8, 0, 0) });
+        panel.Children.Add(new TextBlock { Text = $"v{ProductInfo.Version}  •  Release", FontFamily = new FontFamily("Consolas"), FontSize = 10, Foreground = DesignTokens.Muted, Margin = new Thickness(8, 8, 0, 0) });
         return new Border { Background = DesignTokens.Sidebar, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = panel };
     }
 

@@ -57,3 +57,12 @@
 - **Bloom**: kernel Gaussiano expandido de 6 taps para 8 taps com `exp(-j²·0.15)`, intensidade aumentada para 0.12.
 - **Iluminação sunset**: direção da luz ajustada para `(-0.2, -0.85, 0.45)` com cor mais quente `(1.6, 1.1, 0.5)` e intensidade 2.5.
 - **Member variables** `heightmap_`, `hmRes_`, `worldSize_` adicionados à classe `VillageScene` para acesso no método `Render`.
+
+## 2026-07-25 — Release v1.0.0.0, README, instalador Inno Setup
+
+- README.md completo com features, arquitetura, build e sistema visual
+- `installer.iss` (Inno Setup) para gerar instalador do EMEDiagnostics
+- `docs/logo.ico` convertido do logo EMECore para uso no instalador
+- `app.manifest` atualizado para versão 1.0.0.0
+- `.gitignore` atualizado com `release/`, `installer/`, `*.zip`
+- Release v1.0.0.0 criada no GitHub com artefato ZIP

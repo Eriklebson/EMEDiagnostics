@@ -41,6 +41,11 @@ GeneratedFiles/
 *.temp
 *.bak
 
+# Installer build output
+release/
+installer/
+*.zip
+
 # Operating system files
 Thumbs.db
 Desktop.ini
