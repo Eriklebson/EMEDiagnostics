@@ -124,7 +124,7 @@ public sealed partial class MainWindow : Window
             });
         };
         Activated += async (_, _) => { if (_viewModel.Snapshot == HardwareSnapshot.Empty) await _viewModel.StartAsync(); };
-        _ = ChartTimerLoopAsync(_chartTimerCts.Token);
+        ChartTimerLoopAsync(_chartTimerCts.Token);
         Closed += (_, _) =>
         {
             _chartTimerCts.Cancel();
@@ -142,15 +142,20 @@ public sealed partial class MainWindow : Window
         _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
     }
 
-    private async Task ChartTimerLoopAsync(CancellationToken ct)
+    private void ChartTimerLoopAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        try
+        var thread = new Thread(() =>
         {
-            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
-                DispatcherQueue.TryEnqueue(() => UpdateCharts());
-        }
-        catch (OperationCanceledException) { }
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            try
+            {
+                while (timer.WaitForNextTickAsync(ct).AsTask().GetAwaiter().GetResult())
+                    DispatcherQueue.TryEnqueue(() => UpdateCharts());
+            }
+            catch (OperationCanceledException) { }
+        })
+        { IsBackground = true, Name = "ChartTimer" };
+        thread.Start();
     }
 
     private void BuildShell()

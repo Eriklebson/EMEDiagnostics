@@ -1,3 +1,4 @@
+using System.Threading;
 using EME.Diagnostics.Core.Services;
 using EME.Diagnostics.Hardware;
 using EME.Diagnostics.Reporting;
@@ -34,6 +35,7 @@ public partial class App : Application
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        ThreadPool.SetMinThreads(32, 32);
         await _host.StartAsync();
         _window = _host.Services.GetRequiredService<MainWindow>();
         _window.Closed += async (_, _) => { await _host.StopAsync(); _host.Dispose(); };
