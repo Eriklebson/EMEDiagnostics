@@ -485,6 +485,39 @@ public sealed partial class MainWindow : Window
         return page;
     }
 
+    private static (StackPanel Row, Func<TimeSpan> GetDuration) CreateDurationSelector()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 4, 0, 4) };
+        var combo = new ComboBox { SelectedIndex = 2, MinWidth = 140 };
+        var items = new (string Label, TimeSpan Value)[]
+        {
+            ("30 segundos", TimeSpan.FromSeconds(30)),
+            ("1 minuto", TimeSpan.FromMinutes(1)),
+            ("2 minutos", TimeSpan.FromMinutes(2)),
+            ("5 minutos", TimeSpan.FromMinutes(5)),
+            ("10 minutos", TimeSpan.FromMinutes(10)),
+            ("30 minutos", TimeSpan.FromMinutes(30)),
+            ("Ilimitado", Timeout.InfiniteTimeSpan),
+            ("Personalizado", TimeSpan.Zero),
+        };
+        foreach (var (label, val) in items)
+            combo.Items.Add(new ComboBoxItem { Content = label, Tag = val });
+        var customBox = new TextBox { PlaceholderText = "min", Width = 80, Visibility = Visibility.Collapsed };
+        combo.SelectionChanged += (_, _) =>
+        {
+            customBox.Visibility = combo.SelectedIndex == items.Length - 1 ? Visibility.Visible : Visibility.Collapsed;
+        };
+        row.Children.Add(combo);
+        row.Children.Add(customBox);
+        return (row, () =>
+        {
+            var selected = (ComboBoxItem)combo.SelectedItem;
+            var value = (TimeSpan)selected.Tag;
+            if (value != TimeSpan.Zero) return value;
+            return int.TryParse(customBox.Text, out var mins) && mins >= 1 ? TimeSpan.FromMinutes(mins) : TimeSpan.FromMinutes(2);
+        });
+    }
+
     private static Border PlaceholderCard(StressTestDefinition test)
     {
         var stack = new StackPanel { Spacing = 10 };
@@ -505,12 +538,16 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(_combinedStressState);
         _combinedStressState.Text = "Pronto — inicia CPU + GPU + RAM + Storage (leitura) simultaneamente.";
 
+        var (combinedDurationRow, getCombinedDuration) = CreateDurationSelector();
+        stack.Children.Add(new TextBlock { Text = "DURAÇÃO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted });
+        stack.Children.Add(combinedDurationRow);
+
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         _combinedStressStart = new Button { Content = "Iniciar Combined Test", HorizontalAlignment = HorizontalAlignment.Left };
         _combinedStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
         _combinedStressStart.Click += async (_, _) =>
         {
-            await _viewModel.StartCombinedStressAsync(test.DefaultDuration);
+            await _viewModel.StartCombinedStressAsync(getCombinedDuration());
         };
         _combinedStressStop.Click += (_, _) => _viewModel.StopCombinedStress();
         actions.Children.Add(_combinedStressStart);
@@ -526,13 +563,9 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(new TextBlock { Text = test.Title, FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
         stack.Children.Add(new TextBlock { Text = test.Description, TextWrapping = TextWrapping.Wrap, Foreground = DesignTokens.Muted, MinHeight = 42 });
 
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Duração inicial: 1 minuto",
-            Foreground = DesignTokens.Accent,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 11
-        });
+        var (durationRow, getCpuDuration) = CreateDurationSelector();
+        stack.Children.Add(new TextBlock { Text = "DURAÇÃO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted });
+        stack.Children.Add(durationRow);
 
         _cpuStressState = new TextBlock { Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold };
         _cpuStressMetrics = new TextBlock { Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
@@ -567,7 +600,7 @@ public sealed partial class MainWindow : Window
         _cpuStressStop = new Button { Content = "Cancelar", HorizontalAlignment = HorizontalAlignment.Left };
         _cpuStressStart.Click += async (_, _) =>
         {
-            await _viewModel.StartCpuStressAsync(TimeSpan.FromMinutes(1));
+            await _viewModel.StartCpuStressAsync(getCpuDuration());
         };
         _cpuStressStop.Click += (_, _) => _viewModel.StopCpuStress();
         actions.Children.Add(_cpuStressStart);
@@ -635,6 +668,10 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(_gpuStressState);
         stack.Children.Add(_gpuStressMetrics);
 
+        var (gpuDurationRow, getGpuDuration) = CreateDurationSelector();
+        stack.Children.Add(new TextBlock { Text = "DURAÇÃO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted });
+        stack.Children.Add(gpuDurationRow);
+
         _gpuTelemetryChart = new TelemetryChart(isGpu: true);
         stack.Children.Add(new TextBlock { Text = "MODELO DO GRÁFICO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted, Margin = new Thickness(0, 6, 0, 0) });
         var styleActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -661,7 +698,7 @@ public sealed partial class MainWindow : Window
         _gpuStressStop = new Button { Content = "Cancelar", HorizontalAlignment = HorizontalAlignment.Left };
         _gpuStressStart.Click += async (_, _) =>
         {
-            await _viewModel.StartGpuStressAsync(TimeSpan.Zero);
+            await _viewModel.StartGpuStressAsync(getGpuDuration());
         };
         _gpuStressStop.Click += (_, _) => _viewModel.StopGpuStress();
         actions.Children.Add(_gpuStressStart);
@@ -747,38 +784,9 @@ public sealed partial class MainWindow : Window
         _memoryTelemetryChart.AddSample(_viewModel.Snapshot, isMemory: true);
         stack.Children.Add(_memoryTelemetryChart);
 
-        // Duration selector
-        var durationRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 4, 0, 4) };
-        var durationCombo = new ComboBox { SelectedIndex = 2, MinWidth = 140 };
-        var durationItems = new (string Label, TimeSpan Value)[]
-        {
-            ("30 segundos", TimeSpan.FromSeconds(30)),
-            ("1 minuto", TimeSpan.FromMinutes(1)),
-            ("2 minutos", TimeSpan.FromMinutes(2)),
-            ("5 minutos", TimeSpan.FromMinutes(5)),
-            ("10 minutos", TimeSpan.FromMinutes(10)),
-            ("30 minutos", TimeSpan.FromMinutes(30)),
-            ("Ilimitado", Timeout.InfiniteTimeSpan),
-            ("Personalizado", TimeSpan.Zero),
-        };
-        foreach (var (label, val) in durationItems)
-            durationCombo.Items.Add(new ComboBoxItem { Content = label, Tag = val });
-        var customMinutesBox = new TextBox
-        {
-            PlaceholderText = "min",
-            Width = 80,
-            Visibility = Visibility.Collapsed
-        };
-        durationCombo.SelectionChanged += (_, _) =>
-        {
-            customMinutesBox.Visibility = durationCombo.SelectedIndex == 7 ? Visibility.Visible : Visibility.Collapsed;
-        };
-        durationRow.Children.Add(durationCombo);
-        durationRow.Children.Add(customMinutesBox);
+        var (memDurationRow, getMemDuration) = CreateDurationSelector();
         stack.Children.Add(new TextBlock { Text = "DURAÇÃO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted });
-        stack.Children.Add(durationRow);
-
-        var currentDuration = TimeSpan.FromMinutes(2);
+        stack.Children.Add(memDurationRow);
 
         _memoryStressState.Text = "Pronto para testar RAM";
         _memoryStressMetrics.Text = $"Padrões • {Environment.ProcessorCount} threads • 100% da RAM disponível";
@@ -788,18 +796,7 @@ public sealed partial class MainWindow : Window
         _memoryStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
         _memoryStressStart.Click += async (_, _) =>
         {
-            var selected = (ComboBoxItem)durationCombo.SelectedItem;
-            var value = (TimeSpan)selected.Tag;
-            if (value == TimeSpan.Zero)
-            {
-                if (!int.TryParse(customMinutesBox.Text, out var mins) || mins < 1)
-                {
-                    return;
-                }
-                value = TimeSpan.FromMinutes(mins);
-            }
-            currentDuration = value;
-            await _viewModel.StartMemoryStressAsync(currentDuration);
+            await _viewModel.StartMemoryStressAsync(getMemDuration());
         };
         _memoryStressStop.Click += (_, _) => _viewModel.StopMemoryStress();
         actions.Children.Add(_memoryStressStart);
@@ -854,6 +851,10 @@ public sealed partial class MainWindow : Window
         _storageTelemetryChart.AddSample(_viewModel.Snapshot, isStorage: true);
         stack.Children.Add(_storageTelemetryChart);
 
+        var (storageDurationRow, getStorageDuration) = CreateDurationSelector();
+        stack.Children.Add(new TextBlock { Text = "DURAÇÃO", CharacterSpacing = 100, FontSize = 9, Foreground = DesignTokens.Muted });
+        stack.Children.Add(storageDurationRow);
+
         _storageStressState.Text = "Pronto para testar Storage";
         _storageStressMetrics.Text = "Arquivo temporário de 4 GB • 16 streams • leitura com NO_BUFFERING";
 
@@ -863,11 +864,11 @@ public sealed partial class MainWindow : Window
         _storageStressStop = new Button { Content = "Parar", HorizontalAlignment = HorizontalAlignment.Left };
         _storageWriteStart.Click += async (_, _) =>
         {
-            await _viewModel.StartStorageWriteStressAsync(test.DefaultDuration);
+            await _viewModel.StartStorageWriteStressAsync(getStorageDuration());
         };
         _storageReadStart.Click += async (_, _) =>
         {
-            await _viewModel.StartStorageReadStressAsync(test.DefaultDuration);
+            await _viewModel.StartStorageReadStressAsync(getStorageDuration());
         };
         _storageStressStop.Click += (_, _) => _viewModel.StopStorageStress();
         actions.Children.Add(_storageWriteStart);
