@@ -14,6 +14,8 @@ public partial class App : Application
     private readonly IHost _host;
     private MainWindow? _window;
 
+    public static IServiceProvider Services => ((App)Current)._host.Services;
+
     public App()
     {
         InitializeComponent();
@@ -25,7 +27,9 @@ public partial class App : Application
                 services.AddSingleton<IGpuStressEngine, DirectX11GpuStressEngine>();
                 services.AddSingleton<IMemoryStressEngine, MemoryStressEngine>();
                 services.AddSingleton<IStorageStressEngine, StorageStressEngine>();
-                services.AddSingleton<IReportService, PendingReportService>();
+                services.AddSingleton<IReportRepository, ReportRepository>();
+                services.AddSingleton<StressDataCollector>();
+                services.AddSingleton<IReportService, ReportService>();
                 services.AddSingleton<StressCatalogService>();
                 services.AddSingleton<ViewModels.MainViewModel>();
                 services.AddSingleton<MainWindow>();

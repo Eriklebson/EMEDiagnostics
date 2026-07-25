@@ -13,7 +13,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IGpuStressEngine _gpuStressEngine;
     private readonly IMemoryStressEngine _memoryStressEngine;
     private readonly IStorageStressEngine _storageStressEngine;
+    private readonly IReportRepository _reportRepository;
+    private readonly IReportService _reportService;
     private readonly GpuVramTest _vramTest = new();
+    private readonly StressDataCollector _dataCollector;
     private readonly PeriodicTimer _timer = new(TimeSpan.FromSeconds(1));
     private readonly CancellationTokenSource _cancellation = new();
     private CancellationTokenSource? _cpuStressCancellation;
@@ -54,17 +57,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public StressStatus StorageStressStatus { get => _storageStressStatus; private set => SetProperty(ref _storageStressStatus, value); }
     public StorageTestMode StorageStressMode { get => _storageStressMode; private set => SetProperty(ref _storageStressMode, value); }
     public StressStatus CombinedStressStatus { get => _combinedStressStatus; private set => SetProperty(ref _combinedStressStatus, value); }
+    public List<StressReportSummary> SavedReports { get; private set; } = [];
     public string GpuBackendName => _gpuStressEngine.BackendName;
     public bool IsGpuStressAvailable => _gpuStressEngine.IsAvailable;
     public bool IsVramTestAvailable => _vramTest.IsAvailable;
 
-    public MainViewModel(IHardwareMonitor hardware, ICpuStressEngine cpuStressEngine, IGpuStressEngine gpuStressEngine, IMemoryStressEngine memoryStressEngine, IStorageStressEngine storageStressEngine)
+    public MainViewModel(IHardwareMonitor hardware, ICpuStressEngine cpuStressEngine, IGpuStressEngine gpuStressEngine, IMemoryStressEngine memoryStressEngine, IStorageStressEngine storageStressEngine, IReportRepository reportRepository, IReportService reportService, StressDataCollector dataCollector)
     {
         _hardware = hardware;
         _cpuStressEngine = cpuStressEngine;
         _gpuStressEngine = gpuStressEngine;
         _memoryStressEngine = memoryStressEngine;
         _storageStressEngine = storageStressEngine;
+        _reportRepository = reportRepository;
+        _reportService = reportService;
+        _dataCollector = dataCollector;
         _cpuStressEngine.MetricsUpdated += OnCpuStressMetricsUpdated;
         _gpuStressEngine.MetricsUpdated += OnGpuStressMetricsUpdated;
         _memoryStressEngine.MetricsUpdated += OnMemoryStressMetricsUpdated;
@@ -74,6 +81,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task StartAsync()
     {
+        await _reportRepository.InitializeAsync();
         await RefreshAsync();
         _ = RefreshLoopAsync(_cancellation.Token);
     }
@@ -94,12 +102,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var usedGb = (mem.ullTotalPhys - mem.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
             var totalGb = mem.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
             Snapshot = snapshot with { MemoryUsedGb = usedGb, MemoryTotalGb = totalGb, MemoryTemperature = snapshot.MemoryTemperature, StorageTemperature = snapshot.StorageTemperature, StorageLoad = snapshot.StorageLoad, StorageReadMBs = snapshot.StorageReadMBs, StorageWriteMBs = snapshot.StorageWriteMBs };
+            if (_dataCollector.SampleCount > 0) _dataCollector.AddSample(Snapshot);
             Status = $"Dados atualizados às {Snapshot.CapturedAt:HH:mm:ss}";
         }
         catch (Exception ex) { Status = $"Sensores indisponíveis: {ex.Message}"; }
     }
 
-    public async Task StartCpuStressAsync(TimeSpan duration)
+    public async Task StartCpuStressAsync(TimeSpan duration, bool saveReport = true)
     {
         if (CpuStressStatus == StressStatus.Running) return;
 
@@ -108,6 +117,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         CpuStressMetrics = new CpuStressMetrics(TimeSpan.Zero, duration, 0, Environment.ProcessorCount, 0);
         CpuStressStatus = StressStatus.Running;
         Status = $"Teste de CPU iniciado com {Environment.ProcessorCount} workers.";
+        if (saveReport) _dataCollector.StartCollecting(ReportTestType.Cpu);
 
         try
         {
@@ -116,22 +126,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _cpuStressCancellation.Token);
             CpuStressStatus = StressStatus.Completed;
             Status = "Teste de CPU concluído com sucesso.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
             CpuStressStatus = StressStatus.Cancelled;
             Status = "Teste de CPU cancelado.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             CpuStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de CPU: {exception.Message}";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
         }
     }
 
     public void StopCpuStress() => _cpuStressCancellation?.Cancel();
 
-    public async Task StartGpuStressAsync(TimeSpan duration, int qualityLevel = 2)
+    public async Task StartGpuStressAsync(TimeSpan duration, int qualityLevel = 2, bool saveReport = true)
     {
         if (GpuStressStatus == StressStatus.Running) return;
 
@@ -142,12 +155,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var qualityNames = new[] { "Baixa", "Média", "Alta", "Ultra" };
         var qualityName = qualityNames[Math.Clamp(qualityLevel, 0, 3)];
         Status = $"Teste de GPU iniciado ({qualityName}) com {_gpuStressEngine.BackendName} — modo contínuo.";
+        if (saveReport) _dataCollector.StartCollecting(ReportTestType.Gpu);
 
         try
         {
             await _gpuStressEngine.StartAsync(new GpuStressOptions(duration, 1600, 900, 0, 15, qualityLevel), _gpuStressCancellation.Token);
             GpuStressStatus = StressStatus.Completed;
             Status = "Teste de GPU concluído com sucesso.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
@@ -155,11 +170,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Status = Snapshot.Gpu.Temperature is >= 90
                 ? "Teste de GPU interrompido pela proteção térmica (90 °C)."
                 : "Teste de GPU cancelado.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             GpuStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de GPU: {exception.Message}";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
         }
     }
 
@@ -208,7 +225,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _vramTest.Stop();
     }
 
-    public async Task StartMemoryStressAsync(TimeSpan duration, int sizeMb = 0)
+    public async Task StartMemoryStressAsync(TimeSpan duration, int sizeMb = 0, bool saveReport = true)
     {
         if (MemoryStressStatus == StressStatus.Running) return;
 
@@ -218,6 +235,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         MemoryStressMetrics = new MemoryStressMetrics(TimeSpan.Zero, duration, 0, sizeMb, 0, 0);
         MemoryStressStatus = StressStatus.Running;
         Status = $"Teste de RAM iniciado — {sizeMb} MB com {Environment.ProcessorCount} threads.";
+        if (saveReport) _dataCollector.StartCollecting(ReportTestType.Memory);
 
         try
         {
@@ -226,16 +244,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _memoryStressCancellation.Token);
             MemoryStressStatus = StressStatus.Completed;
             Status = "Teste de RAM concluído com sucesso.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
             MemoryStressStatus = StressStatus.Cancelled;
             Status = "Teste de RAM cancelado.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             MemoryStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de RAM: {exception.Message}";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
         }
     }
 
@@ -246,7 +267,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _memoryStressCancellation?.Cancel();
     }
 
-    public async Task StartStorageWriteStressAsync(TimeSpan duration)
+    public async Task StartStorageWriteStressAsync(TimeSpan duration, bool saveReport = true)
     {
         if (StorageStressStatus == StressStatus.Running) return;
 
@@ -256,6 +277,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StorageStressMode = StorageTestMode.Write;
         StorageStressStatus = StressStatus.Running;
         Status = "Teste de Escrita iniciado — 4096 MB com 16 streams, WriteThrough.";
+        if (saveReport) _dataCollector.StartCollecting(ReportTestType.Storage);
 
         try
         {
@@ -266,20 +288,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _storageStressCancellation.Token);
             StorageStressStatus = StressStatus.Completed;
             Status = "Teste de Escrita concluído.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
             StorageStressStatus = StressStatus.Cancelled;
             Status = "Teste de Escrita cancelado.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             StorageStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de Escrita: {exception.Message}";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
         }
     }
 
-    public async Task StartStorageReadStressAsync(TimeSpan duration)
+    public async Task StartStorageReadStressAsync(TimeSpan duration, bool saveReport = true)
     {
         if (StorageStressStatus == StressStatus.Running) return;
 
@@ -289,6 +314,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StorageStressMode = StorageTestMode.Read;
         StorageStressStatus = StressStatus.Running;
         Status = "Teste de Leitura iniciado — 4096 MB com 16 streams, NO_BUFFERING.";
+        if (saveReport) _dataCollector.StartCollecting(ReportTestType.Storage);
 
         try
         {
@@ -299,16 +325,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _storageStressCancellation.Token);
             StorageStressStatus = StressStatus.Completed;
             Status = "Teste de Leitura concluído.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
             StorageStressStatus = StressStatus.Cancelled;
             Status = "Teste de Leitura cancelado.";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             StorageStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de Leitura: {exception.Message}";
+            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
         }
     }
 
@@ -328,30 +357,34 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _combinedStressCancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
         CombinedStressStatus = StressStatus.Running;
         Status = "Combined Test iniciado — todos os componentes sob carga simultânea.";
+        _dataCollector.StartCollecting(ReportTestType.Combined);
 
         try
         {
             var tasks = new List<Task>
             {
-                Task.Run(() => StartCpuStressAsync(duration)),
-                Task.Run(() => StartGpuStressAsync(duration)),
-                Task.Run(() => StartMemoryStressAsync(duration)),
-                Task.Run(() => StartStorageReadStressAsync(duration)),
+                Task.Run(() => StartCpuStressAsync(duration, saveReport: false)),
+                Task.Run(() => StartGpuStressAsync(duration, saveReport: false)),
+                Task.Run(() => StartMemoryStressAsync(duration, saveReport: false)),
+                Task.Run(() => StartStorageReadStressAsync(duration, saveReport: false)),
             };
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
             CombinedStressStatus = StressStatus.Completed;
             Status = "Combined Test concluído.";
+            await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
             CombinedStressStatus = StressStatus.Cancelled;
             Status = "Combined Test cancelado.";
+            await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             CombinedStressStatus = StressStatus.Failed;
             Status = $"Falha no Combined Test: {exception.Message}";
+            await _dataCollector.SaveReportAsync(duration, "Falha");
         }
     }
 
@@ -364,6 +397,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StopGpuStress();
         StopMemoryStress();
         StopStorageStress();
+    }
+
+    public async Task LoadReportsAsync()
+    {
+        SavedReports = await _reportRepository.GetAllReportsAsync();
+        OnPropertyChanged(nameof(SavedReports));
+    }
+
+    public async Task DeleteReportAsync(long id)
+    {
+        await _reportRepository.DeleteReportAsync(id);
+        await LoadReportsAsync();
+    }
+
+    public async Task<string> ExportReportPdfAsync(long id)
+    {
+        var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
+        Directory.CreateDirectory(docs);
+        var path = Path.Combine(docs, $"Relatorio_{id}_{DateTime.Now:yyyy-MM-dd_HHmmss}.pdf");
+        return await _reportService.ExportPdfAsync(id, path);
     }
 
     private static MEMORYSTATUSEX GetMemoryStatus()

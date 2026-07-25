@@ -211,7 +211,7 @@ public sealed partial class MainWindow : Window
             "Stress Test" => StressTest(),
             "Benchmark" => Placeholder("Benchmark", "A interface está preparada para suítes de benchmark futuras."),
             "Hardware" => Hardware(),
-            "Relatórios" => Placeholder("Relatórios", "Aqui ficarão histórico, filtros e exportação PDF de hardware, resultados, temperaturas, duração e conclusão."),
+            "Relatórios" => ReportsPage(),
             "Configurações" => Placeholder("Configurações", "Preferências de atualização, limites térmicos, tema e comportamento dos testes."),
             _ => Dashboard()
         };
@@ -345,6 +345,96 @@ public sealed partial class MainWindow : Window
         {
             ShowPage();
         }
+    }
+
+    private UIElement ReportsPage()
+    {
+        var page = Page("Relatórios", "Histórico de testes de estresse salvos com valores mínimos, médios e máximos.");
+        _ = _viewModel.LoadReportsAsync();
+
+        var refreshButton = new Button
+        {
+            Content = "Atualizar lista",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        refreshButton.Click += async (_, _) => { await _viewModel.LoadReportsAsync(); ShowPage(); };
+        page.Children.Add(refreshButton);
+
+        var list = new StackPanel { Spacing = 8 };
+
+        foreach (var report in _viewModel.SavedReports)
+        {
+            var card = new Border
+            {
+                Background = DesignTokens.Card,
+                BorderBrush = DesignTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = DesignTokens.CardRadius,
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var info = new StackPanel { Spacing = 4 };
+            info.Children.Add(new TextBlock
+            {
+                Text = $"{report.TestType}  •  {report.CreatedAt:dd/MM/yyyy HH:mm}  •  {report.Status}",
+                FontWeight = FontWeights.SemiBold,
+                Foreground = DesignTokens.Text,
+                FontSize = 13
+            });
+            info.Children.Add(new TextBlock
+            {
+                Text = $"Duração: {report.Duration:hh\\:mm\\:ss}  •  {report.EntryCount} sensores registrados",
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 10,
+                Foreground = DesignTokens.Muted
+            });
+            row.Children.Add(info);
+
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+            var exportBtn = new Button { Content = "Exportar PDF", Padding = new Thickness(12, 6, 12, 6) };
+            var deleteBtn = new Button { Content = "Excluir", Padding = new Thickness(12, 6, 12, 6) };
+            var reportId = report.Id;
+            exportBtn.Click += async (_, _) =>
+            {
+                try
+                {
+                    var path = await _viewModel.ExportReportPdfAsync(reportId);
+                    _status.Text = $"PDF exportado: {path}";
+                }
+                catch (Exception ex) { _status.Text = $"Erro ao exportar: {ex.Message}"; }
+            };
+            deleteBtn.Click += async (_, _) =>
+            {
+                await _viewModel.DeleteReportAsync(reportId);
+                ShowPage();
+            };
+            actions.Children.Add(exportBtn);
+            actions.Children.Add(deleteBtn);
+            Grid.SetColumn(actions, 1);
+            row.Children.Add(actions);
+            card.Child = row;
+            list.Children.Add(card);
+        }
+
+        if (_viewModel.SavedReports.Count == 0)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Text = "Nenhum relatório salvo ainda. Execute um teste de estresse para gerar o primeiro relatório.",
+                Foreground = DesignTokens.Muted,
+                FontStyle = Windows.UI.Text.FontStyle.Italic,
+                Margin = new Thickness(0, 16, 0, 0)
+            });
+        }
+
+        page.Children.Add(list);
+        return Scroll(page);
     }
 
     private static string GetStructureSignature(HardwareSnapshot snapshot) => string.Join('|',
