@@ -333,10 +333,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var tasks = new List<Task>
             {
-                StartCpuStressAsync(duration),
-                StartGpuStressAsync(duration),
-                StartMemoryStressAsync(duration),
-                StartStorageReadStressAsync(duration),
+                Task.Run(() => StartCpuStressAsync(duration)),
+                Task.Run(() => StartGpuStressAsync(duration)),
+                Task.Run(() => StartMemoryStressAsync(duration)),
+                Task.Run(() => StartStorageReadStressAsync(duration)),
             };
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
