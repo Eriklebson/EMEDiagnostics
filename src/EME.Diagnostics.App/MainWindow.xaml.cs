@@ -203,7 +203,7 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private void ShowPage()
+    private async void ShowPage()
     {
         _content.Content = _viewModel.CurrentPage switch
         {
@@ -211,7 +211,7 @@ public sealed partial class MainWindow : Window
             "Stress Test" => StressTest(),
             "Benchmark" => Placeholder("Benchmark", "A interface está preparada para suítes de benchmark futuras."),
             "Hardware" => Hardware(),
-            "Relatórios" => ReportsPage(),
+            "Relatórios" => await ReportsPageAsync(),
             "Configurações" => Placeholder("Configurações", "Preferências de atualização, limites térmicos, tema e comportamento dos testes."),
             _ => Dashboard()
         };
@@ -347,10 +347,10 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private UIElement ReportsPage()
+    private async Task<UIElement> ReportsPageAsync()
     {
         var page = Page("Relatórios", "Histórico de testes de estresse salvos com valores mínimos, médios e máximos.");
-        _ = _viewModel.LoadReportsAsync();
+        await _viewModel.LoadReportsAsync();
 
         var refreshButton = new Button
         {
