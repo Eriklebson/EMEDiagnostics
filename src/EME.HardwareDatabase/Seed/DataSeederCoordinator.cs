@@ -31,8 +31,9 @@ public sealed class DataSeederCoordinator
         [
             new GpuSensorMappingSeeder(_connectionFactory),
             new CpuSensorMappingSeeder(_connectionFactory),
-            new MotherboardMappingSeeder(_connectionFactory),
             new ReferenceDataSeeder(_connectionFactory),
+            new PCPartPickerSeeder(_connectionFactory, _http),
+            new MotherboardMappingSeeder(_connectionFactory),
         ];
     }
 

@@ -62,6 +62,10 @@ try
     cmd.CommandText = "SELECT COUNT(*) FROM MotherboardTemperatureMappings"; Console.WriteLine($"Motherboard Temp Mappings: {cmd.ExecuteScalar()}");
     cmd.CommandText = "SELECT COUNT(*) FROM MotherboardVoltageMappings"; Console.WriteLine($"Motherboard Volt Mappings: {cmd.ExecuteScalar()}");
     cmd.CommandText = "SELECT COUNT(*) FROM KnownIssues"; Console.WriteLine($"Known Issues: {cmd.ExecuteScalar()}");
+    cmd.CommandText = "SELECT COUNT(*) FROM PowerSupplies"; Console.WriteLine($"Power Supplies: {cmd.ExecuteScalar()}");
+    cmd.CommandText = "SELECT COUNT(*) FROM PsuSensorMappings"; Console.WriteLine($"PSU Sensor Mappings: {cmd.ExecuteScalar()}");
+    cmd.CommandText = "SELECT COUNT(*) FROM NetworkDevices"; Console.WriteLine($"Network Devices: {cmd.ExecuteScalar()}");
+    cmd.CommandText = "SELECT COUNT(*) FROM NetworkSensorMappings"; Console.WriteLine($"Network Sensor Mappings: {cmd.ExecuteScalar()}");
 }
 catch (Exception ex)
 {

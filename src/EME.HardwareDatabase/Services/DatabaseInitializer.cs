@@ -195,6 +195,41 @@ public sealed class DatabaseInitializer
 
             CREATE UNIQUE INDEX IF NOT EXISTS IX_HardwareAliases_Alias ON HardwareAliases(Alias);
 
+            CREATE TABLE IF NOT EXISTS PowerSupplies (
+                Id TEXT PRIMARY KEY,
+                ManufacturerId TEXT NOT NULL REFERENCES Manufacturers(Id),
+                Name TEXT NOT NULL,
+                Type TEXT NOT NULL,
+                Wattage INTEGER,
+                Efficiency TEXT,
+                Modular TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS PsuSensorMappings (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                PowerSupplyId TEXT REFERENCES PowerSupplies(Id),
+                SensorType TEXT NOT NULL,
+                PreferredName TEXT NOT NULL,
+                Priority INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS NetworkDevices (
+                Id TEXT PRIMARY KEY,
+                ManufacturerId TEXT NOT NULL REFERENCES Manufacturers(Id),
+                Name TEXT NOT NULL,
+                Interface TEXT,
+                WirelessStandard TEXT,
+                DeviceType TEXT NOT NULL DEFAULT 'Wired'
+            );
+
+            CREATE TABLE IF NOT EXISTS NetworkSensorMappings (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                NetworkDeviceId TEXT REFERENCES NetworkDevices(Id),
+                SensorType TEXT NOT NULL,
+                PreferredName TEXT NOT NULL,
+                Priority INTEGER NOT NULL DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS KnownIssues (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 TargetType TEXT NOT NULL,
@@ -204,7 +239,7 @@ public sealed class DatabaseInitializer
                 AffectedFrom TEXT,
                 AffectedTo TEXT
             );
-
+            
             CREATE TABLE IF NOT EXISTS DatabaseMigrations (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 Version TEXT NOT NULL,
