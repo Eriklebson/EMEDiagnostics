@@ -1,5 +1,6 @@
 using EME.Diagnostics.Core.Models;
 using EME.Diagnostics.Core.Services;
+using EME.HardwareDatabase.Services;
 using LibreHardwareMonitor.Hardware;
 
 namespace EME.Diagnostics.Hardware;
@@ -8,11 +9,13 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
 {
     private readonly Computer _computer;
     private readonly HardwareMappingResolver _mapping = new();
+    private readonly CpuSensorMappingResolver _cpuMapping = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
     public LibreHardwareMonitorService()
     {
+        EnsureHardwareDatabase();
         _computer = new Computer
         {
             IsCpuEnabled = true,
@@ -24,6 +27,13 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
             IsControllerEnabled = true
         };
         _computer.Open();
+        _cpuMapping.Load();
+    }
+
+    private static void EnsureHardwareDatabase()
+    {
+        try { new HardwareDatabaseUpdateService().EnsureHardwareDatabase(); }
+        catch { }
     }
 
     public async Task<HardwareSnapshot> CaptureAsync(CancellationToken cancellationToken = default)
@@ -36,6 +46,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
             foreach (var hardware in all) hardware.Update();
 
             var cpu = all.FirstOrDefault(x => x.HardwareType == HardwareType.Cpu);
+            if (cpu != null) _cpuMapping.DetectCpu(cpu.Name);
             var gpu = all.FirstOrDefault(x => x.HardwareType is HardwareType.GpuAmd or HardwareType.GpuNvidia or HardwareType.GpuIntel);
             var memory = all.FirstOrDefault(x => x.HardwareType == HardwareType.Memory);
             var motherboard = all.FirstOrDefault(x => x.HardwareType == HardwareType.Motherboard);
@@ -86,13 +97,25 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
         finally { _gate.Release(); }
     }
 
-    private static ComponentMetric ToMetric(IHardware? hardware, string fallback)
+    private ComponentMetric ToMetric(IHardware? hardware, string fallback)
     {
         if (hardware is null) return new(fallback, null, null, null, null);
+        var isCpu = hardware.HardwareType == HardwareType.Cpu;
+        if (isCpu)
+        {
+            return new(
+                hardware.Name,
+                Find(hardware, SensorType.Load, "Total", "Core"),
+                _cpuMapping.FindSensor(hardware, SensorType.Temperature,
+                    _cpuMapping.GetTempSensorName() ?? "Core", _cpuMapping.GetTempFallbacks()),
+                Find(hardware, SensorType.Clock, "Core", "GPU"),
+                _cpuMapping.FindSensor(hardware, SensorType.Power,
+                    _cpuMapping.GetPowerSensorName() ?? "Package", ["GPU"]));
+        }
         return new(
             hardware.Name,
             Find(hardware, SensorType.Load, "Total", "Core"),
-            Find(hardware, SensorType.Temperature, "Package", "Core", "Tctl", "Hot Spot"),
+            Find(hardware, SensorType.Temperature, "Core", "Hot Spot"),
             Find(hardware, SensorType.Clock, "Core", "GPU"),
             Find(hardware, SensorType.Power, "Package", "GPU"));
     }
