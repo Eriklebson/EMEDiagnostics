@@ -125,6 +125,7 @@ public sealed partial class MainWindow : Window
             });
         };
         Activated += async (_, _) => { if (_viewModel.Snapshot == HardwareSnapshot.Empty) await _viewModel.StartAsync(); };
+
         ChartTimerLoopAsync(_chartTimerCts.Token);
         Closed += (_, _) =>
         {
@@ -133,7 +134,6 @@ public sealed partial class MainWindow : Window
             _viewModel.Dispose();
         };
     }
-
     private void UpdateCharts()
     {
         if (_viewModel.CurrentPage != "Stress Test") return;
@@ -343,9 +343,7 @@ public sealed partial class MainWindow : Window
     {
         var snapshot = _viewModel.Snapshot;
         if (_dashboardStructureSignature != GetStructureSignature(snapshot))
-        {
             ShowPage();
-        }
     }
 
     private async Task<UIElement> ReportsPageAsync()

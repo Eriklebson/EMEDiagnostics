@@ -156,7 +156,12 @@ public sealed class CpuRepository : ICpuRepository
                 if (prop != null && !reader.IsDBNull(i))
                 {
                     var val = reader.GetValue(i);
-                    prop.SetValue(result, Convert.ChangeType(val, prop.PropertyType));
+                    var targetType = prop.PropertyType;
+                    var underlyingType = Nullable.GetUnderlyingType(targetType);
+                    if (underlyingType != null)
+                        prop.SetValue(result, Convert.ChangeType(val, underlyingType));
+                    else
+                        prop.SetValue(result, Convert.ChangeType(val, targetType));
                 }
             }
             return result;

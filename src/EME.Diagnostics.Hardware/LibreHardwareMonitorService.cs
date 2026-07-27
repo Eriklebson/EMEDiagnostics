@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using EME.Diagnostics.Core.Models;
 using EME.Diagnostics.Core.Services;
 using EME.HardwareDatabase.Services;

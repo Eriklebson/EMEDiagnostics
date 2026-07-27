@@ -1,5 +1,13 @@
 # Relatório de desenvolvimento
 
+## 2026-07-26 — v1.0.1
+
+- **Corrigido** `InvalidCastException` no `CpuRepository.GetByIdAsync<T>()` ao converter `long` (SQLite INTEGER) para `int?` via `Convert.ChangeType` — adicionado suporte a `Nullable<T>` com `Nullable.GetUnderlyingType`.
+- **Removido** logging temporário em `%TEMP%\EME_LHM.log` que violava regra do AGENTS.md (arquivos temporários para coleta de hardware).
+- **app.manifest**: alterado de `asInvoker` para `requireAdministrator` para permitir que o LibreHardwareMonitor enumere sensores de hardware completos.
+- Build 0 erros, 0 warnings.
+- Instalador compilado para v1.0.1.0.
+
 ## 2026-07-21 — Estrutura inicial
 
 - Criada a solução inicial em camadas.

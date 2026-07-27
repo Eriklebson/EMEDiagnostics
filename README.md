@@ -31,13 +31,15 @@
 ## Projetos da Solução
 
 ```
-EME.Diagnostics.App          → WinUI 3, MVVM, DI (Principal)
-├── EME.Diagnostics.Core      → Modelos e contratos de domínio
-├── EME.Diagnostics.Hardware  → Coleta de sensores (LibreHardwareMonitor, WMI, API nativa)
-├── EME.Diagnostics.Services  → Orquestração e casos de uso
-├── EME.Diagnostics.Reporting → Geração de relatórios PDF (QuestPDF)
-├── EME.Diagnostics.GpuEngine → Motor nativo C++/DirectX 11 (DLL)
-└── EME.Diagnostics.Shared    → Constantes e tipos compartilhados
+EME.Diagnostics.App             → WinUI 3, MVVM, DI (Principal)
+├── EME.Diagnostics.Core          → Modelos e contratos de domínio
+├── EME.Diagnostics.Hardware      → Coleta de sensores (LibreHardwareMonitor, WMI, API nativa)
+├── EME.Diagnostics.Services      → Orquestração e casos de uso
+├── EME.Diagnostics.Reporting     → Geração de relatórios PDF (QuestPDF)
+├── EME.Diagnostics.GpuEngine     → Motor nativo C++/DirectX 11 (DLL)
+├── EME.Diagnostics.Shared        → Constantes e tipos compartilhados
+├── EME.HardwareDatabase          → Catálogo SQLite de hardware + mapeamento de sensores
+└── EME.HardwareDatabase.Seeder   → Seeders (PCPartPicker, RightNow GPU, TechAPI CPU, referência)
 ```
 
 ## Instalação
@@ -77,7 +79,9 @@ EME.Diagnostics.App (WinExe - WinUI 3)
   ├── EME.Diagnostics.Services    (Class Library)
   ├── EME.Diagnostics.Reporting   (Class Library)
   ├── EME.Diagnostics.GpuEngine   (C++ DLL - DirectX 11)
-  └── EME.Diagnostics.Shared      (Class Library)
+  ├── EME.Diagnostics.Shared      (Class Library)
+  ├── EME.HardwareDatabase        (Class Library)
+  └── EME.HardwareDatabase.Seeder (Console App)
 ```
 
 ### Princípios
@@ -101,14 +105,34 @@ O backend DirectX 11 (`DirectX11GpuStressEngine`) renderiza uma cena procedural 
 
 ---
 
-## Banco de Dados
+## Bancos de Dados
 
-SQLite local em `%LOCALAPPDATA%\EMEDiagnostics\reports.db`.
+### Reports (`%LOCALAPPDATA%\EMEDiagnostics\reports.db`)
 
-### Tabelas
+| Tabela | Descrição |
+|--------|-----------|
+| Reports | Relatórios de teste (tipo, duração, timestamp) |
+| ReportEntries | Sensores coletados (mínimo, médio, máximo por sessão) |
 
-- **Reports** — Relatórios de teste (tipo, duração, timestamp)
-- **ReportEntries** — Sensores coletados (mínimo, médio, máximo por sessão)
+### Hardware Database (`%PROGRAMDATA%\EME\HardwareDatabase\eme-hardware.db`)
+
+Catálogo local com +105 mil registros de hardware para mapeamento de sensores:
+
+| Tabela | Registros |
+|--------|-----------|
+| Motherboards | 5.046 |
+| Memories | 3.527 |
+| StorageDevices | 1.918 |
+| PsuDevices | 2.129 |
+| NetworkDevices | 517 |
+| CpuSensorMappings | 21.597 |
+| GpuSensorMappings | 1.208 |
+| MotherboardSensorMappings | 1.561 |
+| StorageSensorMappings | 7.672 |
+| PsuSensorMappings | 40.451 |
+| NetworkSensorMappings | 3.822 |
+
+> Banco populado via seeders (RightNow GPU, TechAPI CPU, PCPartPicker dataset, dados de referência).
 
 ---
 
@@ -133,6 +157,36 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 | Acento | `#4CCBA0` |
 | Aviso | `#E6A030` |
 | Perigo | `#E84D4D` |
+
+---
+
+## Histórico de Versões
+
+### v1.0.1 (2026-07-26) — Correção de detecção de hardware
+
+| Tipo | Mudança |
+|------|---------|
+| 🐛 Correção | `InvalidCastException` ao ler propriedades `int?` do SQLite no `CpuRepository.GetByIdAsync<T>()` — `long` não era convertível para `Nullable<int>` via `Convert.ChangeType` |
+| 🔒 Segurança | `app.manifest` alterado de `asInvoker` para `requireAdministrator` — LHM precisa de admin para enumerar sensores completos |
+| 🧹 Limpeza | Removido logging diagnóstico em `%TEMP%` |
+| ⚙️ Build | 0 erros, 0 warnings. Instalador v1.0.1.0 |
+
+### v1.0.0 (2026-07-25) — Primeira release
+
+| Tipo | Mudança |
+|------|---------|
+| ✨ Feature | Dashboard com monitoramento em tempo real de CPU, GPU, RAM, disco, fans |
+| ✨ Feature | Teste de estresse multithread para CPU com gráfico de temperatura |
+| ✨ Feature | Teste de RAM com alocação progressiva até 100% |
+| ✨ Feature | Motor GPU nativo C++/DirectX 11 com cena procedural medieval (PBR, sombras, bloom) |
+| ✨ Feature | Teste de armazenamento com `FILE_FLAG_NO_BUFFERING` e 16 streams paralelos |
+| ✨ Feature | Teste combinado (CPU + GPU + RAM + Storage simultâneo) |
+| ✨ Feature | Gráficos de telemetria em tempo real |
+| ✨ Feature | Relatórios com banco SQLite local e exportação PDF (QuestPDF) |
+| ✨ Feature | Banco de dados de hardware SQLite com seeders (GPUs, CPUs, sensor mappings) |
+| ✨ Feature | Integração com dataset PCPartPicker (~105k registros: motherboards, RAM, storage, PSUs, network) |
+| ✨ Feature | Mapeamento de sensores por SuperIO para motherboard |
+| 🎨 UI | Tema Cyber Dark com paleta escura e acento verde-menta |
 
 ---
 
