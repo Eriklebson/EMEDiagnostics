@@ -62,17 +62,21 @@ public sealed class CpuSensorMappingResolver
 
         if (_dbRepo != null)
         {
-            var identity = new CpuDetectionIdentity { Name = cpuName };
-            var resolved = Task.Run(async () => await new HardwareProfileResolver(
-                _dbRepo, new MotherboardRepository(new DatabaseConnectionFactory())).ResolveCpuAsync(identity)).GetAwaiter().GetResult();
-            if (resolved.MatchLevel == MatchLevel.Exact || resolved.MatchLevel == MatchLevel.Family)
+            try
             {
-                _matchedArchitecture = resolved.ProfileId;
-                _detectedVendor = resolved.ProfileId?.StartsWith("amd") == true ? "AMD"
-                    : resolved.ProfileId?.StartsWith("intel") == true ? "Intel"
-                    : resolved.ProfileId?.StartsWith("nvidia") == true ? "NVIDIA" : null;
-                return;
+                var identity = new CpuDetectionIdentity { Name = cpuName };
+                var resolved = Task.Run(async () => await new HardwareProfileResolver(
+                    _dbRepo, new MotherboardRepository(new DatabaseConnectionFactory())).ResolveCpuAsync(identity)).GetAwaiter().GetResult();
+                if (resolved.MatchLevel == MatchLevel.Exact || resolved.MatchLevel == MatchLevel.Family)
+                {
+                    _matchedArchitecture = resolved.ProfileId;
+                    _detectedVendor = resolved.ProfileId?.StartsWith("amd") == true ? "AMD"
+                        : resolved.ProfileId?.StartsWith("intel") == true ? "Intel"
+                        : resolved.ProfileId?.StartsWith("nvidia") == true ? "NVIDIA" : null;
+                    return;
+                }
             }
+            catch { }
         }
 
         foreach (var (archName, entry) in _architectures)
@@ -127,6 +131,7 @@ public sealed class CpuSensorMappingResolver
     {
         return GetSensorValue("TempSensor") ??
                GetVendorDefault("TempSensor") ??
+               HardcodedVendorDefault("TempSensor") ??
                "Core (Tctl/Tdie)";
     }
 
@@ -134,6 +139,7 @@ public sealed class CpuSensorMappingResolver
     {
         return GetSensorValue("PowerSensor") ??
                GetVendorDefault("PowerSensor") ??
+               HardcodedVendorDefault("PowerSensor") ??
                "CPU Package";
     }
 
@@ -143,7 +149,33 @@ public sealed class CpuSensorMappingResolver
         if (archFallback.Length > 0) return archFallback;
         var vendorFallback = GetVendorDefaultList("TempFallback");
         if (vendorFallback.Length > 0) return vendorFallback;
+        var hardcoded = HardcodedVendorList("TempFallback");
+        if (hardcoded.Length > 0) return hardcoded;
         return [];
+    }
+
+    private string? HardcodedVendorDefault(string key)
+    {
+        if (_detectedVendor == null) return null;
+        return (_detectedVendor, key) switch
+        {
+            ("AMD", "TempSensor") => "Core (Tctl/Tdie)",
+            ("AMD", "PowerSensor") => "CPU Package",
+            ("Intel", "TempSensor") => "CPU Package",
+            ("Intel", "PowerSensor") => "CPU Package",
+            _ => null
+        };
+    }
+
+    private string[] HardcodedVendorList(string key)
+    {
+        if (_detectedVendor == null) return [];
+        return (_detectedVendor, key) switch
+        {
+            ("AMD", "TempFallback") => ["Tctl", "Tdie", "CCD", "CPU Package", "Core"],
+            ("Intel", "TempFallback") => ["Core #0", "CPU Package", "Core Average", "CPU", "Core"],
+            _ => []
+        };
     }
 
     private string? GetSensorValue(string key)

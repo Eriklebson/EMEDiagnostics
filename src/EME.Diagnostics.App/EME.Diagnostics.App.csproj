@@ -33,5 +33,8 @@
     <Content Include="..\..\config\hardware-mapping.json" Link="config\hardware-mapping.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\..\config\cpu-sensors-mapping.json" Link="config\cpu-sensors-mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>
