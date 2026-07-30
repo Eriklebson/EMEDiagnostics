@@ -121,8 +121,9 @@ public sealed class ClientService : IDisposable
         {
             var url = $"api/reports?machineId={Uri.EscapeDataString(MachineId)}&machineName={Uri.EscapeDataString(MachineName)}&testType={Uri.EscapeDataString(testType)}&duration={Uri.EscapeDataString(duration)}&status={Uri.EscapeDataString(status)}&result={Uri.EscapeDataString(result)}";
 
-            await using var fs = File.OpenRead(pdfPath);
-            var content = new StreamContent(fs);
+            var bytes = await File.ReadAllBytesAsync(pdfPath);
+            var content = new ByteArrayContent(bytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
             var response = await _http.PostAsync(url, content);
             return response.IsSuccessStatusCode;
         }

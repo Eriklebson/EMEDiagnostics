@@ -71,6 +71,8 @@ public sealed partial class MainWindow : Window
                 {
                     UpdateCharts();
                 }
+                if (e.PropertyName is nameof(MainViewModel.ReceivedReports) or nameof(MainViewModel.ConnectedClients) or nameof(MainViewModel.IsServerMode) or nameof(MainViewModel.IsClientConnected)
+                    && _viewModel.CurrentPage == "Rede") ShowPage();
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
                 {
@@ -643,6 +645,14 @@ public sealed partial class MainWindow : Window
         };
 
         btnPanel.Children.Add(toggleServerBtn);
+
+        var refreshBtn = new Button
+        {
+            Content = "Atualizar",
+            Padding = new Thickness(12, 6, 12, 6)
+        };
+        refreshBtn.Click += (_, _) => ShowPage();
+        btnPanel.Children.Add(refreshBtn);
 
         var statusBadge = new TextBlock
         {

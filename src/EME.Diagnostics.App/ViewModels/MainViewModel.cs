@@ -120,17 +120,33 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task AutoSendReportToServer(long reportId)
     {
-        if (!_clientService.IsConnected) return;
+        if (reportId <= 0)
+        {
+            Status = "Relatório vazio — nada a enviar para o servidor.";
+            return;
+        }
+
+        if (!_clientService.IsConnected)
+        {
+            Status = "Não conectado a nenhum servidor — relatório salvo apenas localmente.";
+            return;
+        }
 
         try
         {
             var detail = await _reportRepository.GetReportAsync(reportId);
-            if (detail == null) return;
+            if (detail == null)
+            {
+                Status = $"Relatório #{reportId} não encontrado no banco local.";
+                return;
+            }
 
             var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
             Directory.CreateDirectory(docs);
             var pdfPath = Path.Combine(docs, $"Relatorio_{reportId}_{DateTime.Now:yyyy-MM-dd_HHmmss}.pdf");
             await _reportService.ExportPdfAsync(reportId, pdfPath);
+
+            Status = $"Enviando relatório {detail.TestType} para {_clientService.ConnectedServer?.HostName}...";
 
             var sent = await _clientService.SendReportAsync(
                 pdfPath,
@@ -140,8 +156,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 detail.Result);
 
             Status = sent
-                ? "Relatório enviado para a máquina principal."
-                : "Falha ao enviar relatório para a máquina principal.";
+                ? $"Relatório {detail.TestType} enviado para {_clientService.ConnectedServer?.HostName}."
+                : $"Falha ao enviar relatório para {_clientService.ConnectedServer?.HostName}. Verifique se o servidor está online.";
 
             try { File.Delete(pdfPath); } catch { }
         }

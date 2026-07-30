@@ -37,8 +37,12 @@ Name: "startmenuicon"; Description: "Criar atalho no Menu Iniciar"; GroupDescrip
 
 [Files]
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "database\*"
+#ifexist "release\database\eme-hardware.db"
 Source: "{#ReleaseDir}\database\eme-hardware.db"; DestDir: "{commonappdata}\EME\HardwareDatabase"; Flags: ignoreversion uninsneveruninstall
+#endif
+#ifexist "release\tools\PawnIO_setup.exe"
 Source: "{#ReleaseDir}\tools\PawnIO_setup.exe"; DestDir: "{app}\tools"; Flags: ignoreversion
+#endif
 
 [Icons]
 Name: "{group}\EME Diagnostics"; Filename: "{app}\EME.Diagnostics.App.exe"; Comment: "Abrir E.M.E Diagnostics"
@@ -78,7 +82,7 @@ begin
   PawnIOExe := ExpandConstant('{app}\tools\PawnIO_setup.exe');
   if not FileExists(PawnIOExe) then
   begin
-    Log('PawnIO_setup.exe nao encontrado em: ' + PawnIOExe);
+    Log('PawnIO_setup.exe nao encontrado em: ' + PawnIOExe + ' — pulando instalacao do driver.');
     Exit;
   end;
 
