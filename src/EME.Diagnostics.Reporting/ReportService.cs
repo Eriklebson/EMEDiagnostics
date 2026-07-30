@@ -51,9 +51,9 @@ public sealed class ReportService : IReportService
     private static Document GenerateDocument(StressReportDetail report)
     {
         bool hasResult = report.Result != "Pendente";
-        float angle = hasResult ? (float)(Random.Shared.NextDouble() * 12 - 6 + 18) : 0;
-        float offsetX = hasResult ? (float)(Random.Shared.NextDouble() * 20 - 10) : 0;
-        float offsetY = hasResult ? (float)(Random.Shared.NextDouble() * 20 - 10) : 0;
+        float angle = hasResult ? (float)(Random.Shared.NextDouble() * 50 - 25) : 0;
+        float offsetX = hasResult ? (float)(Random.Shared.NextDouble() * 60 - 30) : 0;
+        float offsetY = hasResult ? (float)(Random.Shared.NextDouble() * 30 - 15) : 0;
 
         return Document.Create(doc =>
         {
@@ -138,7 +138,7 @@ public sealed class ReportService : IReportService
                         var isPass = report.Result == "PASS";
                         var color = isPass ? Colors.Green.Darken1 : Colors.Red.Darken1;
 
-                        col.Item().PaddingTop(24).PaddingLeft(offsetX + 40).PaddingRight(offsetX).AlignLeft().Element(x =>
+                        col.Item().PaddingTop(24).PaddingRight(offsetX + 40).PaddingBottom(offsetY).AlignRight().Element(x =>
                             x.Rotate(angle).Border(3).BorderColor(color).PaddingVertical(10).PaddingHorizontal(14).Column(stamp =>
                             {
                                 stamp.Item().Text(report.Result)
