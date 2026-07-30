@@ -50,6 +50,11 @@ public sealed class ReportService : IReportService
 
     private static Document GenerateDocument(StressReportDetail report)
     {
+        bool hasResult = report.Result != "Pendente";
+        float angle = hasResult ? (float)(Random.Shared.NextDouble() * 12 - 6 + 18) : 0;
+        float offsetX = hasResult ? (float)(Random.Shared.NextDouble() * 20 - 10) : 0;
+        float offsetY = hasResult ? (float)(Random.Shared.NextDouble() * 20 - 10) : 0;
+
         return Document.Create(doc =>
         {
             doc.Page(page =>
@@ -69,23 +74,6 @@ public sealed class ReportService : IReportService
 
                 page.Content().Column(col =>
                 {
-                    // Result stamp
-                    if (report.Result != "Pendente")
-                    {
-                        var isPass = report.Result == "PASS";
-                        col.Item().PaddingBottom(8).Row(row =>
-                        {
-                            row.RelativeItem();
-                            row.AutoItem().Border(3).BorderColor(isPass ? Colors.Green.Darken1 : Colors.Red.Darken1).Padding(12).AlignCenter().Column(stamp =>
-                            {
-                                const float size = 22;
-                                stamp.Item().Text(report.Result)
-                                    .SemiBold().FontSize(size).FontColor(isPass ? Colors.Green.Darken1 : Colors.Red.Darken1);
-                            });
-                            row.RelativeItem();
-                        });
-                    }
-
                     // Summary section
                     col.Item().Row(row =>
                     {
@@ -142,6 +130,20 @@ public sealed class ReportService : IReportService
                                 t.Cell().Text(entry.Unit).FontSize(9);
                             }
                         });
+                    }
+
+                    // Result stamp at bottom — rotated like a real stamp
+                    if (hasResult)
+                    {
+                        var isPass = report.Result == "PASS";
+                        var color = isPass ? Colors.Green.Darken1 : Colors.Red.Darken1;
+
+                        col.Item().PaddingTop(24).PaddingLeft(offsetX + 40).PaddingRight(offsetX).AlignLeft().Element(x =>
+                            x.Rotate(angle).Border(3).BorderColor(color).PaddingVertical(10).PaddingHorizontal(14).Column(stamp =>
+                            {
+                                stamp.Item().Text(report.Result)
+                                    .SemiBold().FontSize(22).FontColor(color);
+                            }));
                     }
                 });
 

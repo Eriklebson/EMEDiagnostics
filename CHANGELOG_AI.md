@@ -7,8 +7,9 @@
 - **Adicionado** `ComputeThrottlingResult()` no `StressDataCollector` — analisa clock de CPU e GPU durante o teste. Se clock cair >25% na segunda metade vs primeira metade, é throttling.
 - **Gestão visual**: resultado exibido no card de relatório (verde para PASS, vermelho para RECUSADO).
 - **Detalhes**: badge de resultado no collapse com fundo semi-transparente verde/vermelho.
-- **PDF**: carimbo centralizado com resultado (borda verde/vermelha, label semi-bold).
+- **PDF**: carimbo no final do relatório com rotação diagonal (15-25°) e posição semi-aleatória para efeito realista de carimbo.
 - **Banco**: coluna `Result` na tabela `Reports` com migração automática para DBs existentes.
+- **Corrigido** GPU stress bloqueado — `EME.Diagnostics.GpuEngine.dll` ausente no `release/` por build com `SkipGpuEngine=true`. DLL restaurada do release v1.0.0.0.
 - **Build** 0 erros, 0 warnings.
 
 - **Adicionado** `AGENTS.md` completo com regras de idioma, consulta obrigatória, performance, versionamento, build seguro e README.
