@@ -187,7 +187,7 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 8, Padding = new Thickness(16, 22, 16, 16) };
         panel.Children.Add(new TextBlock { Text = "E.M.E", FontSize = 11, CharacterSpacing = 220, Foreground = DesignTokens.Accent, FontWeight = FontWeights.Bold });
         panel.Children.Add(new TextBlock { Text = "Diagnostics", FontSize = 21, Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, -6, 0, 24) });
-        foreach (var item in new[] { ("Dashboard", "\uE80F"), ("Stress Test", "\uE945"), ("Hardware", "\uE950"), ("Relatórios", "\uE9F9"), ("Configurações", "\uE713") })
+        foreach (var item in new[] { ("Dashboard", "\uE80F"), ("Stress Test", "\uE945"), ("Hardware", "\uE950"), ("Relatórios", "\uE9F9"), ("Rede", "\uE8CE"), ("Configurações", "\uE713") })
             panel.Children.Add(NavButton(item.Item1, item.Item2));
         panel.Children.Add(new Border { Height = 1, Background = DesignTokens.Border, Margin = new Thickness(8, 16, 8, 8) });
         panel.Children.Add(new TextBlock { Text = $"v{ProductInfo.Version}  •  Release", FontFamily = new FontFamily("Consolas"), FontSize = 10, Foreground = DesignTokens.Muted, Margin = new Thickness(8, 8, 0, 0) });
@@ -212,6 +212,7 @@ public sealed partial class MainWindow : Window
             "Stress Test" => StressTest(),
             "Hardware" => Hardware(),
             "Relatórios" => await ReportsPageAsync(),
+            "Rede" => RedePageAsync(),
             "Configurações" => Placeholder("Configurações", "Preferências de atualização, limites térmicos, tema e comportamento dos testes."),
             _ => Dashboard()
         };
@@ -611,6 +612,193 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, 4),
             Child = stack
         };
+    }
+
+    private UIElement RedePageAsync()
+    {
+        var page = Page("Rede", "Gerencie conexões entre máquinas na rede. Uma máquina pode se tornar principal para receber relatórios das demais.");
+
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 12) };
+
+        var toggleServerBtn = new Button
+        {
+            Content = _viewModel.IsServerMode ? "Parar servidor" : "Tornar Principal",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(16, 8, 16, 8)
+        };
+
+        toggleServerBtn.Click += async (_, _) =>
+        {
+            if (_viewModel.IsServerMode)
+            {
+                _viewModel.StopServer();
+                toggleServerBtn.Content = "Tornar Principal";
+            }
+            else
+            {
+                await _viewModel.StartServerAsync();
+                toggleServerBtn.Content = "Parar servidor";
+            }
+            ShowPage();
+        };
+
+        btnPanel.Children.Add(toggleServerBtn);
+
+        var statusBadge = new TextBlock
+        {
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        if (_viewModel.IsServerMode)
+        {
+            statusBadge.Text = "Modo Servidor Ativo";
+            statusBadge.Foreground = DesignTokens.Accent;
+        }
+        else if (_viewModel.IsClientConnected)
+        {
+            statusBadge.Text = $"Conectado a {_viewModel.ConnectedServerName}";
+            statusBadge.Foreground = DesignTokens.Accent;
+        }
+        else
+        {
+            statusBadge.Text = "Modo Autônomo";
+            statusBadge.Foreground = DesignTokens.Muted;
+        }
+
+        btnPanel.Children.Add(statusBadge);
+        page.Children.Add(btnPanel);
+
+        var contentArea = new ScrollViewer { Margin = new Thickness(0, 0, 0, 0) };
+        var contentStack = new StackPanel { Spacing = 12 };
+        contentArea.Content = contentStack;
+
+        if (_viewModel.IsServerMode)
+        {
+            // Connected clients section
+            contentStack.Children.Add(new TextBlock { Text = $"Máquinas Conectadas ({_viewModel.ConnectedClients.Count})", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+
+            if (_viewModel.ConnectedClients.Count == 0)
+            {
+                contentStack.Children.Add(new TextBlock
+                {
+                    Text = "Nenhuma máquina conectada. Aguardando conexões...",
+                    Foreground = DesignTokens.Muted,
+                    FontStyle = Windows.UI.Text.FontStyle.Italic,
+                    Margin = new Thickness(0, 4, 0, 8)
+                });
+            }
+            else
+            {
+                foreach (var client in _viewModel.ConnectedClients)
+                {
+                    var clientCard = new Border
+                    {
+                        Background = DesignTokens.Card,
+                        BorderBrush = DesignTokens.Border,
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = DesignTokens.CardRadius,
+                        Padding = new Thickness(14),
+                        Child = new Grid()
+                    };
+                    var grid = (Grid)clientCard.Child;
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var clientInfo = new StackPanel { Spacing = 2 };
+                    clientInfo.Children.Add(new TextBlock { Text = client.HostName, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, FontSize = 13 });
+                    clientInfo.Children.Add(new TextBlock { Text = $"IP: {client.IpAddress}", FontSize = 10, Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas") });
+                    clientInfo.Children.Add(new TextBlock { Text = $"Conectado em: {client.LastSeen:HH:mm:ss}", FontSize = 10, Foreground = DesignTokens.Muted });
+                    grid.Children.Add(clientInfo);
+
+                    var onlineBadge = new Border
+                    {
+                        Background = DesignTokens.Accent,
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(8, 3, 8, 3),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new TextBlock { Text = "Online", FontSize = 10, Foreground = DesignTokens.Text }
+                    };
+                    Grid.SetColumn(onlineBadge, 1);
+                    grid.Children.Add(onlineBadge);
+
+                    contentStack.Children.Add(clientCard);
+                }
+            }
+
+            // Received reports section
+            contentStack.Children.Add(new TextBlock { Text = $"Relatórios Recebidos ({_viewModel.ReceivedReports.Count})", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, Margin = new Thickness(0, 8, 0, 0) });
+
+            if (_viewModel.ReceivedReports.Count == 0)
+            {
+                contentStack.Children.Add(new TextBlock
+                {
+                    Text = "Nenhum relatório recebido ainda.",
+                    Foreground = DesignTokens.Muted,
+                    FontStyle = Windows.UI.Text.FontStyle.Italic,
+                    Margin = new Thickness(0, 4, 0, 8)
+                });
+            }
+            else
+            {
+                foreach (var r in _viewModel.ReceivedReports)
+                {
+                    var reportCard = new Border
+                    {
+                        Background = DesignTokens.Card,
+                        BorderBrush = DesignTokens.Border,
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = DesignTokens.CardRadius,
+                        Padding = new Thickness(14),
+                        Margin = new Thickness(0, 0, 0, 4)
+                    };
+                    var row = new StackPanel { Spacing = 4 };
+                    row.Children.Add(new TextBlock { Text = $"{r.MachineName}  •  {r.TestType}  •  {r.CreatedAt:dd/MM/yyyy HH:mm}", FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, FontSize = 13 });
+                    row.Children.Add(new TextBlock { Text = $"Duração: {r.Duration}  •  Status: {r.Status}  •  Resultado: {r.Result}  •  Tamanho: {r.PdfSizeBytes / 1024} KB", FontSize = 10, Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas") });
+                    reportCard.Child = row;
+                    contentStack.Children.Add(reportCard);
+                }
+            }
+        }
+        else if (_viewModel.IsClientConnected)
+        {
+            contentStack.Children.Add(new Border
+            {
+                Background = DesignTokens.Card,
+                BorderBrush = DesignTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = DesignTokens.CardRadius,
+                Padding = new Thickness(16),
+                Child = new StackPanel { Spacing = 6, Children =
+                {
+                    new TextBlock { Text = "Conectado à máquina principal", FontWeight = FontWeights.SemiBold, FontSize = 15, Foreground = DesignTokens.Accent },
+                    new TextBlock { Text = $"Servidor: {_viewModel.ConnectedServerName}", FontSize = 12, Foreground = DesignTokens.Text },
+                    new TextBlock { Text = "Os relatórios gerados nos testes de estresse serão enviados automaticamente para a máquina principal.", FontSize = 11, Foreground = DesignTokens.Muted, TextWrapping = TextWrapping.Wrap }
+                }}
+            });
+        }
+        else
+        {
+            contentStack.Children.Add(new Border
+            {
+                Background = DesignTokens.Card,
+                BorderBrush = DesignTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = DesignTokens.CardRadius,
+                Padding = new Thickness(16),
+                Child = new StackPanel { Spacing = 6, Children =
+                {
+                    new TextBlock { Text = "Nenhum servidor encontrado na rede", FontWeight = FontWeights.SemiBold, FontSize = 15, Foreground = DesignTokens.Text },
+                    new TextBlock { Text = "Clique em \"Tornar Principal\" para se tornar o servidor e receber relatórios de outras máquinas.", FontSize = 11, Foreground = DesignTokens.Muted, TextWrapping = TextWrapping.Wrap }
+                }}
+            });
+        }
+
+        page.Children.Add(contentArea);
+        var outerGrid = new Grid();
+        outerGrid.Children.Add(page);
+        return outerGrid;
     }
 
     private UIElement StressTest()

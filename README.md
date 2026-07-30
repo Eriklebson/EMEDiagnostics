@@ -162,6 +162,18 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 
 ## Histórico de Versões
 
+### v1.2.0 (2026-07-30) — Rede LAN, modo Servidor/Cliente
+
+| Tipo | Mudança |
+|------|---------|
+| ✨ Feature | Novo projeto `EME.Diagnostics.Networking` — comunicação entre máquinas na LAN |
+| ✨ Feature | Botão "Tornar Principal" — abre servidor HTTP `:+8500` para receber relatórios |
+| ✨ Feature | Descoberta automática via UDP broadcast (porta 8432) |
+| ✨ Feature | Clientes enviam PDF automaticamente após cada teste de estresse |
+| ✨ Feature | Página "Rede" na sidebar com clientes online e relatórios recebidos |
+| 📱 Mobile | Endpoints REST preparados para futuro app de celular |
+| ⚙️ Build | 0 erros, 0 warnings. v1.2.0 |
+
 ### v1.1.0 (2026-07-30) — PASS/RECUSADO por throttling
 
 | Tipo | Mudança |

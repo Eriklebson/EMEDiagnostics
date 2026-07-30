@@ -1,5 +1,16 @@
 # Relatório de desenvolvimento
 
+## 2026-07-30 — v1.2.0 — Rede LAN, modo Servidor/Cliente, auto-envio de PDF
+
+- **Adicionado** novo projeto `EME.Diagnostics.Networking` com `ServerService`, `ClientService`.
+- **Servidor**: ao clicar "Tornar Principal", abre servidor HTTP `:+8500` com endpoints REST (`/api/reports`, `/api/clients`, `/api/ping`). Anuncia-se na rede via UDP broadcast na porta 8432.
+- **Cliente**: escuta UDP broadcast, detecta servidor automaticamente, conecta e envia heartbeat a cada 5s.
+- **Auto-envio**: após cada teste de estresse, se conectado ao servidor, o PDF é enviado automaticamente via `POST /api/reports`.
+- **UI**: nova página "Rede" na sidebar com: botão Tornar Principal/Parar servidor, status de conexão, lista de clientes online, relatórios recebidos.
+- **REST compatível com mobile**: endpoints GET para listar e baixar PDFs — preparado para futuro app de celular.
+- **Sem dependências externas**: tudo com `HttpListener`, `UdpClient`, `HttpClient` (BCL do .NET).
+- **Build** 0 erros, 0 warnings.
+
 ## 2026-07-30 — v1.1.0 — PASS/RECUSADO por throttling
 
 - **Adicionado** `StressTestResult` enum: Pass, RecusadoCpu, RecusadoGpu, RecusadoCpuGpu.

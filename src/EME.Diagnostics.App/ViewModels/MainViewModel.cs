@@ -2,6 +2,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EME.Diagnostics.Core.Models;
 using EME.Diagnostics.Core.Services;
+using EME.Diagnostics.Networking;
+using EME.Diagnostics.Networking.Models;
 using EME.Diagnostics.Services;
 
 namespace EME.Diagnostics.App.ViewModels;
@@ -17,6 +19,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IReportService _reportService;
     private readonly GpuVramTest _vramTest = new();
     private readonly StressDataCollector _dataCollector;
+    private readonly ServerService _serverService;
+    private readonly ClientService _clientService;
     private readonly PeriodicTimer _timer = new(TimeSpan.FromSeconds(1));
     private readonly CancellationTokenSource _cancellation = new();
     private CancellationTokenSource? _cpuStressCancellation;
@@ -62,7 +66,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public bool IsGpuStressAvailable => _gpuStressEngine.IsAvailable;
     public bool IsVramTestAvailable => _vramTest.IsAvailable;
 
-    public MainViewModel(IHardwareMonitor hardware, ICpuStressEngine cpuStressEngine, IGpuStressEngine gpuStressEngine, IMemoryStressEngine memoryStressEngine, IStorageStressEngine storageStressEngine, IReportRepository reportRepository, IReportService reportService, StressDataCollector dataCollector)
+    public bool IsServerMode => _serverService.IsRunning;
+    public bool IsClientConnected => _clientService.IsConnected;
+    public string? ConnectedServerName => _clientService.ConnectedServer?.HostName;
+    public IReadOnlyList<RemoteMachineInfo> ConnectedClients => _serverService.Clients;
+    public IReadOnlyList<RemoteReportInfo> ReceivedReports => _serverService.Reports;
+
+    public MainViewModel(IHardwareMonitor hardware, ICpuStressEngine cpuStressEngine, IGpuStressEngine gpuStressEngine, IMemoryStressEngine memoryStressEngine, IStorageStressEngine storageStressEngine, IReportRepository reportRepository, IReportService reportService, StressDataCollector dataCollector, ServerService serverService, ClientService clientService)
     {
         _hardware = hardware;
         _cpuStressEngine = cpuStressEngine;
@@ -72,11 +82,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _reportRepository = reportRepository;
         _reportService = reportService;
         _dataCollector = dataCollector;
+        _serverService = serverService;
+        _clientService = clientService;
         _cpuStressEngine.MetricsUpdated += OnCpuStressMetricsUpdated;
         _gpuStressEngine.MetricsUpdated += OnGpuStressMetricsUpdated;
         _memoryStressEngine.MetricsUpdated += OnMemoryStressMetricsUpdated;
         _storageStressEngine.MetricsUpdated += OnStorageStressMetricsUpdated;
         _vramTest.MetricsUpdated += OnVramTestMetricsUpdated;
+        _serverService.ClientsChanged += (_, _) => { OnPropertyChanged(nameof(ConnectedClients)); OnPropertyChanged(nameof(IsServerMode)); };
+        _serverService.ReportsChanged += (_, _) => { OnPropertyChanged(nameof(ReceivedReports)); };
+        _clientService.ServerConnected += (_, _) => { OnPropertyChanged(nameof(IsClientConnected)); OnPropertyChanged(nameof(ConnectedServerName)); Status = $"Conectado ao servidor {_clientService.ConnectedServer?.HostName}"; };
+        _clientService.ServerDisconnected += (_, _) => { OnPropertyChanged(nameof(IsClientConnected)); OnPropertyChanged(nameof(ConnectedServerName)); Status = "Desconectado do servidor."; };
     }
 
     public async Task StartAsync()
@@ -84,6 +100,55 @@ public partial class MainViewModel : ObservableObject, IDisposable
         await _reportRepository.InitializeAsync();
         await RefreshAsync();
         _ = RefreshLoopAsync(_cancellation.Token);
+        _ = _clientService.StartDiscoveryAsync(_cancellation.Token);
+    }
+
+    public async Task StartServerAsync()
+    {
+        await _serverService.StartAsync(_cancellation.Token);
+        OnPropertyChanged(nameof(IsServerMode));
+        OnPropertyChanged(nameof(ConnectedClients));
+        Status = $"Servidor iniciado na porta {NetworkConstants.ServerPort} — outras máquinas podem se conectar.";
+    }
+
+    public void StopServer()
+    {
+        _serverService.Stop();
+        OnPropertyChanged(nameof(IsServerMode));
+        Status = "Servidor parado.";
+    }
+
+    private async Task AutoSendReportToServer(long reportId)
+    {
+        if (!_clientService.IsConnected) return;
+
+        try
+        {
+            var detail = await _reportRepository.GetReportAsync(reportId);
+            if (detail == null) return;
+
+            var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
+            Directory.CreateDirectory(docs);
+            var pdfPath = Path.Combine(docs, $"Relatorio_{reportId}_{DateTime.Now:yyyy-MM-dd_HHmmss}.pdf");
+            await _reportService.ExportPdfAsync(reportId, pdfPath);
+
+            var sent = await _clientService.SendReportAsync(
+                pdfPath,
+                detail.TestType.ToString(),
+                detail.Duration.ToString(@"hh\:mm\:ss"),
+                detail.Status,
+                detail.Result);
+
+            Status = sent
+                ? "Relatório enviado para a máquina principal."
+                : "Falha ao enviar relatório para a máquina principal.";
+
+            try { File.Delete(pdfPath); } catch { }
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erro ao enviar relatório: {ex.Message}";
+        }
     }
 
     [RelayCommand]
@@ -126,19 +191,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _cpuStressCancellation.Token);
             CpuStressStatus = StressStatus.Completed;
             Status = "Teste de CPU concluído com sucesso.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Concluído"); await AutoSendReportToServer(id); }
         }
         catch (OperationCanceledException)
         {
             CpuStressStatus = StressStatus.Cancelled;
             Status = "Teste de CPU cancelado.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Cancelado"); await AutoSendReportToServer(id); }
         }
         catch (Exception exception)
         {
             CpuStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de CPU: {exception.Message}";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Falha"); await AutoSendReportToServer(id); }
         }
     }
 
@@ -162,7 +227,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             await _gpuStressEngine.StartAsync(new GpuStressOptions(duration, 1600, 900, 0, 15, qualityLevel), _gpuStressCancellation.Token);
             GpuStressStatus = StressStatus.Completed;
             Status = "Teste de GPU concluído com sucesso.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Concluído"); await AutoSendReportToServer(id); }
         }
         catch (OperationCanceledException)
         {
@@ -170,13 +235,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Status = Snapshot.Gpu.Temperature is >= 90
                 ? "Teste de GPU interrompido pela proteção térmica (90 °C)."
                 : "Teste de GPU cancelado.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Cancelado"); await AutoSendReportToServer(id); }
         }
         catch (Exception exception)
         {
             GpuStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de GPU: {exception.Message}";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Falha"); await AutoSendReportToServer(id); }
         }
     }
 
@@ -244,19 +309,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _memoryStressCancellation.Token);
             MemoryStressStatus = StressStatus.Completed;
             Status = "Teste de RAM concluído com sucesso.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Concluído"); await AutoSendReportToServer(id); }
         }
         catch (OperationCanceledException)
         {
             MemoryStressStatus = StressStatus.Cancelled;
             Status = "Teste de RAM cancelado.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Cancelado"); await AutoSendReportToServer(id); }
         }
         catch (Exception exception)
         {
             MemoryStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de RAM: {exception.Message}";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Falha"); await AutoSendReportToServer(id); }
         }
     }
 
@@ -288,19 +353,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _storageStressCancellation.Token);
             StorageStressStatus = StressStatus.Completed;
             Status = "Teste de Escrita concluído.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Concluído"); await AutoSendReportToServer(id); }
         }
         catch (OperationCanceledException)
         {
             StorageStressStatus = StressStatus.Cancelled;
             Status = "Teste de Escrita cancelado.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Cancelado"); await AutoSendReportToServer(id); }
         }
         catch (Exception exception)
         {
             StorageStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de Escrita: {exception.Message}";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Falha"); await AutoSendReportToServer(id); }
         }
     }
 
@@ -325,19 +390,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _storageStressCancellation.Token);
             StorageStressStatus = StressStatus.Completed;
             Status = "Teste de Leitura concluído.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Concluído");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Concluído"); await AutoSendReportToServer(id); }
         }
         catch (OperationCanceledException)
         {
             StorageStressStatus = StressStatus.Cancelled;
             Status = "Teste de Leitura cancelado.";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Cancelado");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Cancelado"); await AutoSendReportToServer(id); }
         }
         catch (Exception exception)
         {
             StorageStressStatus = StressStatus.Failed;
             Status = $"Falha no teste de Leitura: {exception.Message}";
-            if (saveReport) await _dataCollector.SaveReportAsync(duration, "Falha");
+            if (saveReport) { var id = await _dataCollector.SaveReportAsync(duration, "Falha"); await AutoSendReportToServer(id); }
         }
     }
 
@@ -372,19 +437,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
             await Task.WhenAll(tasks).ConfigureAwait(false);
             CombinedStressStatus = StressStatus.Completed;
             Status = "Combined Test concluído.";
-            await _dataCollector.SaveReportAsync(duration, "Concluído");
         }
         catch (OperationCanceledException)
         {
             CombinedStressStatus = StressStatus.Cancelled;
             Status = "Combined Test cancelado.";
-            await _dataCollector.SaveReportAsync(duration, "Cancelado");
         }
         catch (Exception exception)
         {
             CombinedStressStatus = StressStatus.Failed;
             Status = $"Falha no Combined Test: {exception.Message}";
-            await _dataCollector.SaveReportAsync(duration, "Falha");
+        }
+        finally
+        {
+            var id = await _dataCollector.SaveReportAsync(duration, Status == "Concluído" ? "Concluído" : Status == "Cancelado" ? "Cancelado" : "Falha");
+            await AutoSendReportToServer(id);
         }
     }
 
@@ -490,6 +557,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _storageStressEngine.MetricsUpdated -= OnStorageStressMetricsUpdated;
         _vramTest.MetricsUpdated -= OnVramTestMetricsUpdated;
         _cancellation.Cancel();
+        _serverService.Stop();
+        _clientService.Stop();
         _timer.Dispose();
         _cpuStressCancellation?.Dispose();
         _gpuStressCancellation?.Dispose();
@@ -498,6 +567,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _vramTestCancellation?.Dispose();
         _combinedStressCancellation?.Dispose();
         _gpuStressEngine.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _serverService.Dispose();
+        _clientService.Dispose();
         _vramTest.Dispose();
         _cancellation.Dispose();
     }

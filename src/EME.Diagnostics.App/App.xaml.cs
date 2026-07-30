@@ -1,6 +1,7 @@
 using System.Threading;
 using EME.Diagnostics.Core.Services;
 using EME.Diagnostics.Hardware;
+using EME.Diagnostics.Networking;
 using EME.Diagnostics.Reporting;
 using EME.Diagnostics.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,8 @@ public partial class App : Application
                 services.AddSingleton<StressDataCollector>();
                 services.AddSingleton<IReportService, ReportService>();
                 services.AddSingleton<StressCatalogService>();
+                services.AddSingleton<ServerService>();
+                services.AddSingleton<ClientService>();
                 services.AddSingleton<ViewModels.MainViewModel>();
                 services.AddSingleton<MainWindow>();
             })
