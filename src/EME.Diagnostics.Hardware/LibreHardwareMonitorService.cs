@@ -16,7 +16,12 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
 
     public LibreHardwareMonitorService()
     {
+        DiagnosticLogger.Clear();
+        DiagnosticLogger.Log("=== Inicio da inicializacao ===");
+
         EnsureHardwareDatabase();
+
+        DiagnosticLogger.Log("Criando Computer LHM...");
         _computer = new Computer
         {
             IsCpuEnabled = true,
@@ -27,14 +32,38 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
             IsNetworkEnabled = false,
             IsControllerEnabled = true
         };
-        _computer.Open();
+
+        try
+        {
+            DiagnosticLogger.Log("Chamando _computer.Open()...");
+            _computer.Open();
+            DiagnosticLogger.Log("_computer.Open() OK");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Log($"FALHA no _computer.Open(): {ex.GetType().Name}: {ex.Message}");
+            throw;
+        }
+
+        DiagnosticLogger.Log("Chamando _cpuMapping.Load()...");
         _cpuMapping.Load();
+        DiagnosticLogger.Log($"_cpuMapping.Load() concluido. Vendor: {_cpuMapping.DetectedVendor ?? "(null)"}, Arch: {_cpuMapping.DetectedArchitecture ?? "(null)"}");
     }
 
     private static void EnsureHardwareDatabase()
     {
-        try { new HardwareDatabaseUpdateService().EnsureHardwareDatabase(); }
-        catch { }
+        try
+        {
+            DiagnosticLogger.Log("Chamando EnsureHardwareDatabase...");
+            new HardwareDatabaseUpdateService().EnsureHardwareDatabase();
+
+            var dbPath = EME.HardwareDatabase.Shared.Constants.DatabasePath;
+            DiagnosticLogger.Log($"DB existe: {File.Exists(dbPath)}, Tamanho: {(File.Exists(dbPath) ? new System.IO.FileInfo(dbPath).Length.ToString() : "N/A")}");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Log($"FALHA no EnsureHardwareDatabase: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     public async Task<HardwareSnapshot> CaptureAsync(CancellationToken cancellationToken = default)
@@ -44,10 +73,23 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
         try
         {
             var all = Enumerate(_computer.Hardware).ToArray();
+            DiagnosticLogger.Log($"Hardware enumerados: {all.Length} dispositivos");
+            foreach (var hw in all)
+                DiagnosticLogger.Log($"  HW: [{hw.HardwareType}] {hw.Name} (sensors: {hw.Sensors.Length})");
+
             foreach (var hardware in all) hardware.Update();
 
             var cpu = all.FirstOrDefault(x => x.HardwareType == HardwareType.Cpu);
-            if (cpu != null) _cpuMapping.DetectCpu(cpu.Name);
+            if (cpu != null)
+            {
+                DiagnosticLogger.Log($"CPU detectada: '{cpu.Name}'");
+                _cpuMapping.DetectCpu(cpu.Name);
+                DiagnosticLogger.Log($"DetectCpu -> Vendor: {_cpuMapping.DetectedVendor ?? "(null)"}, Arch: {_cpuMapping.DetectedArchitecture ?? "(null)"}");
+
+                // Log todos os sensores da CPU
+                foreach (var s in cpu.Sensors)
+                    DiagnosticLogger.Log($"  CPU Sensor: [{s.SensorType}] '{s.Name}' = {s.Value?.ToString() ?? "null"} (min: {s.Min?.ToString() ?? "null"}, max: {s.Max?.ToString() ?? "null"})");
+            }
             var gpu = all.FirstOrDefault(x => x.HardwareType is HardwareType.GpuAmd or HardwareType.GpuNvidia or HardwareType.GpuIntel);
             var memory = all.FirstOrDefault(x => x.HardwareType == HardwareType.Memory);
             var motherboard = all.FirstOrDefault(x => x.HardwareType == HardwareType.Motherboard);
@@ -100,18 +142,26 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
 
     private ComponentMetric ToMetric(IHardware? hardware, string fallback)
     {
-        if (hardware is null) return new(fallback, null, null, null, null);
+        if (hardware is null)
+        {
+            DiagnosticLogger.Log($"ToMetric: hardware null, fallback='{fallback}'");
+            return new(fallback, null, null, null, null);
+        }
         var isCpu = hardware.HardwareType == HardwareType.Cpu;
         if (isCpu)
         {
-            return new(
-                hardware.Name,
-                Find(hardware, SensorType.Load, "Total", "Core"),
-                _cpuMapping.FindSensor(hardware, SensorType.Temperature,
-                    _cpuMapping.GetTempSensorName() ?? "Core", _cpuMapping.GetTempFallbacks()),
-                Find(hardware, SensorType.Clock, "Core", "GPU"),
-                _cpuMapping.FindSensor(hardware, SensorType.Power,
-                    _cpuMapping.GetPowerSensorName() ?? "Package", ["GPU"]));
+            var tempSensorName = _cpuMapping.GetTempSensorName();
+            var tempFallbacks = _cpuMapping.GetTempFallbacks();
+            var powerSensorName = _cpuMapping.GetPowerSensorName();
+            var load = Find(hardware, SensorType.Load, "Total", "Core");
+            var temp = _cpuMapping.FindSensor(hardware, SensorType.Temperature, tempSensorName ?? "Core", tempFallbacks);
+            var clock = Find(hardware, SensorType.Clock, "Core", "GPU");
+            var power = _cpuMapping.FindSensor(hardware, SensorType.Power, powerSensorName ?? "Package", ["GPU"]);
+
+            DiagnosticLogger.Log($"ToMetric CPU: tempSensorName='{tempSensorName}', tempFallbacks=[{(tempFallbacks.Length > 0 ? string.Join(", ", tempFallbacks) : "(vazio)")}], powerSensorName='{powerSensorName}'");
+            DiagnosticLogger.Log($"ToMetric CPU: load={load?.ToString() ?? "null"}, temp={temp?.ToString() ?? "null"}, clock={clock?.ToString() ?? "null"}, power={power?.ToString() ?? "null"}");
+
+            return new(hardware.Name, load, temp, clock, power);
         }
         return new(
             hardware.Name,

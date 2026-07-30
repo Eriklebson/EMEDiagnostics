@@ -1,26 +1,37 @@
-# Arquitetura proposta
+# Arquitetura
 
-```text
-EME.Diagnostics.App
-  ├── EME.Diagnostics.Services
-  ├── EME.Diagnostics.Hardware
-  ├── EME.Diagnostics.Reporting
-  ├── EME.Diagnostics.Core
-  └── EME.Diagnostics.Shared
+## Clean Architecture
 
-EME.Diagnostics.Services ──► EME.Diagnostics.Core
-EME.Diagnostics.Hardware ──► EME.Diagnostics.Core
-EME.Diagnostics.Reporting ─► EME.Diagnostics.Core
+```
+EME.Diagnostics.App        (UI — WinUI 3, MVVM)
+  ├── EME.Diagnostics.Services   (Stress engines, report repository)
+  ├── EME.Diagnostics.Hardware   (LibreHardwareMonitor wrapper)
+  ├── EME.Diagnostics.Reporting  (QuestPDF generation)
+  ├── EME.Diagnostics.Core       (Models, contracts/interfaces)
+  ├── EME.Diagnostics.Shared     (ProductInfo, constants)
+  ├── EME.Diagnostics.GpuEngine  (Native C++ DLL — DirectX 11 Compute)
+  └── EME.HardwareDatabase       (SQLite hardware database)
 ```
 
-O domínio define `IHardwareMonitor`, `IGpuStressEngine` e `IReportService`. A infraestrutura implementa esses contratos. A aplicação resolve tudo por injeção de dependência e apresenta snapshots prontos.
+## Regras
 
-O motor de carga da GPU está isolado em `EME.Diagnostics.GpuEngine`, uma DLL nativa C++ com backend inicial DirectX 11 Compute. `DirectX11GpuStressEngine` implementa `IGpuStressEngine` e concentra a interoperabilidade; a UI conhece apenas o contrato. Backends DirectX 12, Vulkan e OpenGL podem ser adicionados sem alterar a UI.
+- `Core` não depende de UI nem infraestrutura.
+- `Hardware`, `Services`, `Reporting` dependem apenas de contratos do Core.
+- UI não acessa LHM, WMI, DirectX ou arquivos diretamente.
+- Injeção de dependência via `App.xaml.cs`, todos singletons.
 
-O backend executa um compute shader em memória dedicada, mede dispatches e frame time, detecta remoção do dispositivo pelo driver e respeita cancelamento. A aplicação aplica proteção térmica de 90 °C usando o snapshot do monitor de hardware.
+## Injeção de Dependência (App.xaml.cs)
 
-O mesmo backend cria uma janela Win32 dedicada com swap chain DirectX 11. A cena medieval em 1600×900 é produzida por ray marching em pixel shader e combina cidade procedural, castelo, materiais ruidosos, iluminação PBR, sombras suaves, ambient occlusion, múltiplas luzes, materiais emissivos, nuvens, neblina e câmera cinematográfica. O loop de mensagens, a renderização e a carga compute permanecem na thread nativa; a UI WinUI apenas inicia, cancela e recebe métricas.
-
-## Snapshot de hardware
-
-`IHardwareMonitor` devolve um snapshot imutável contendo os resumos de CPU/GPU e a árvore normalizada de dispositivos. A implementação LHM percorre recursivamente hardwares e sub-hardwares e transforma cada sensor em `SensorMetric`, preservando tipo, valor, mínimo, máximo, unidade e identificador. A Dashboard apenas apresenta esse snapshot e não conhece a biblioteca de coleta.
+```csharp
+services.AddSingleton<IHardwareMonitor, LibreHardwareMonitorService>();
+services.AddSingleton<ICpuStressEngine, CpuStressEngine>();
+services.AddSingleton<IGpuStressEngine, DirectX11GpuStressEngine>();
+services.AddSingleton<IMemoryStressEngine, MemoryStressEngine>();
+services.AddSingleton<IStorageStressEngine, StorageStressEngine>();
+services.AddSingleton<IReportRepository, ReportRepository>();
+services.AddSingleton<StressDataCollector>();
+services.AddSingleton<IReportService, ReportService>();
+services.AddSingleton<StressCatalogService>();
+services.AddSingleton<MainViewModel>();
+services.AddSingleton<MainWindow>();
+```

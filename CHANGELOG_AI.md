@@ -1,5 +1,24 @@
 # Relatório de desenvolvimento
 
+## 2026-07-30 — v1.1.0 — PASS/RECUSADO por throttling
+
+- **Adicionado** `StressTestResult` enum: Pass, RecusadoCpu, RecusadoGpu, RecusadoCpuGpu.
+- **Adicionado** `Result` field em `StressReportSummary` e `StressReportDetail`.
+- **Adicionado** `ComputeThrottlingResult()` no `StressDataCollector` — analisa clock de CPU e GPU durante o teste. Se clock cair >25% na segunda metade vs primeira metade, é throttling.
+- **Gestão visual**: resultado exibido no card de relatório (verde para PASS, vermelho para RECUSADO).
+- **Detalhes**: badge de resultado no collapse com fundo semi-transparente verde/vermelho.
+- **PDF**: carimbo centralizado com resultado (borda verde/vermelha, label semi-bold).
+- **Banco**: coluna `Result` na tabela `Reports` com migração automática para DBs existentes.
+- **Build** 0 erros, 0 warnings.
+
+- **Adicionado** `AGENTS.md` completo com regras de idioma, consulta obrigatória, performance, versionamento, build seguro e README.
+- **Criada** estrutura de documentação em `docs/` com 8 arquivos: architecture, hardware-monitor, database, reporting, ui-shell, stress-test, build-setup, known-issues, versioning.
+- **Instalador**: banco SQLite de 31MB incluso no setup (extraído para `%PROGRAMDATA%\EME\HardwareDatabase`).
+- **Instalador**: `PawnIO_setup.exe` incluso e executado silenciosamente ao final da instalação (`CurStepChanged(ssPostInstall)`).
+- **Adicionado** `DiagnosticLogger.cs` para logging de diagnóstico.
+- **Instalador**: permissão `users-modify` no diretório do banco de dados.
+- Build 0 erros, 0 warnings.
+
 ## 2026-07-26 — v1.0.1
 
 - **Corrigido** `InvalidCastException` no `CpuRepository.GetByIdAsync<T>()` ao converter `long` (SQLite INTEGER) para `int?` via `Convert.ChangeType` — adicionado suporte a `Nullable<T>` com `Nullable.GetUnderlyingType`.

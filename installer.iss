@@ -5,12 +5,12 @@
 
 [Setup]
 AppName=EME Diagnostics
-AppVersion=1.0.1.0
+AppVersion=1.1.0.0
 AppPublisher=E.M.E
 DefaultDirName={autopf}\EMEDiagnostics
 DefaultGroupName=EME Diagnostics
 OutputDir=installer
-OutputBaseFilename=EMEDiagnostics_v1.0.1.0_Setup
+OutputBaseFilename=EMEDiagnostics_v1.1.0_Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 SetupIconFile=docs\logo.ico
@@ -24,12 +24,21 @@ WizardStyle=modern
 Name: "portuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[InstallDelete]
+; Remove banco antigo (vazado) se existir em {app}\database
+Type: files; Name: "{app}\database\eme-hardware.db"
+
+[Dirs]
+Name: "{commonappdata}\EME\HardwareDatabase"; Permissions: users-modify
+
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na area de trabalho"; GroupDescription: "Atalhos:"
 Name: "startmenuicon"; Description: "Criar atalho no Menu Iniciar"; GroupDescription: "Atalhos:"; Flags: checkedonce
 
 [Files]
-Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "database\*"
+Source: "{#ReleaseDir}\database\eme-hardware.db"; DestDir: "{commonappdata}\EME\HardwareDatabase"; Flags: ignoreversion uninsneveruninstall
+Source: "{#ReleaseDir}\tools\PawnIO_setup.exe"; DestDir: "{app}\tools"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\EME Diagnostics"; Filename: "{app}\EME.Diagnostics.App.exe"; Comment: "Abrir E.M.E Diagnostics"
@@ -59,4 +68,39 @@ begin
       ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet/8.0/runtime', '', '', SW_SHOW, ewNoWait, ResultCode);
     end;
   end;
+end;
+
+procedure InstallPawnIO;
+var
+  ResultCode: Integer;
+  PawnIOExe: String;
+begin
+  PawnIOExe := ExpandConstant('{app}\tools\PawnIO_setup.exe');
+  if not FileExists(PawnIOExe) then
+  begin
+    Log('PawnIO_setup.exe nao encontrado em: ' + PawnIOExe);
+    Exit;
+  end;
+
+  Log('Instalando PawnIO driver...');
+  if Exec(PawnIOExe, '-install -silent', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    if ResultCode = 0 then
+      Log('PawnIO instalado com sucesso.')
+    else if ResultCode = 3010 then
+    begin
+      Log('PawnIO: instalado, reinicializacao necessaria (3010).');
+      SuppressibleMsgBox('O driver PawnIO foi instalado. Pode ser necessario reiniciar o computador para que todos os sensores funcionem.', mbInformation, MB_OK, IDOK);
+    end
+    else
+      Log('PawnIO: codigo de retorno inesperado: ' + IntToStr(ResultCode));
+  end
+  else
+    Log('Falha ao executar PawnIO_setup.exe. Codigo: ' + IntToStr(ResultCode));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    InstallPawnIO;
 end;

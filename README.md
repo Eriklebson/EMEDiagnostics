@@ -162,6 +162,30 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 
 ## Histórico de Versões
 
+### v1.1.0 (2026-07-30) — PASS/RECUSADO por throttling
+
+| Tipo | Mudança |
+|------|---------|
+| ✨ Feature | Sistema PASS/RECUSADO — detecta throttling de CPU/GPU durante stress test |
+| ✨ Feature | Resultado exibido em verde (PASS) ou vermelho (RECUSADO) nos cards e detalhes |
+| ✨ Feature | Carimbo centralizado no PDF com resultado (borda colorida, semi-bold) |
+| 🔧 Interno | `StressTestResult` enum com Pass, RecusadoCpu, RecusadoGpu, RecusadoCpuGpu |
+| 🔧 Interno | `ComputeThrottlingResult()` — analisa clock da 1ª metade vs 2ª metade |
+| 🗄️ Banco | Coluna `Result` na tabela `Reports` com migração automática |
+| ⚙️ Build | 0 erros, 0 warnings. v1.1.0 |
+
+### v1.0.2 (2026-07-30) — Documentação, instalador, PawnIO
+
+| Tipo | Mudança |
+|------|---------|
+| 📚 Docs | Criada estrutura completa de documentação em `docs/` (8 arquivos + índice) |
+| 🛠️ Build | AGENTS.md revisado com regras de build seguro, versionamento SemVer e README |
+| 📦 Instalação | Banco SQLite (31MB) incluso no instalador, extraído em `%PROGRAMDATA%` |
+| 📦 Instalação | PawnIO driver instalado automaticamente ao final da instalação |
+| 🔧 Interno | Adicionado `DiagnosticLogger.cs` para logging de diagnóstico |
+| 🔧 Interno | Permissão `users-modify` no diretório do banco de dados no instalador |
+| ⚙️ Build | 0 erros, 0 warnings |
+
 ### v1.0.1 (2026-07-26) — Correção de detecção de hardware
 
 | Tipo | Mudança |

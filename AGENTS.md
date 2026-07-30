@@ -4,6 +4,32 @@
 
 Toda comunicação, documentação e texto de interface deve ser escrito em português do Brasil. Identificadores de código permanecem em inglês.
 
+## Consulta obrigatória
+
+Antes de qualquer alteração, **leia SEMPRE**:
+1. `AGENTS.md` (este arquivo)
+2. `docs/README.md` (índice da documentação)
+3. Os arquivos de documentação relevantes em `docs/`
+
+Toda alteração feita deve ser documentada nos arquivos `docs/` apropriados.
+
+## Estrutura da documentação
+
+A documentação fica em `docs/` e é dividida em múltiplos arquivos para facilitar a consulta:
+
+| Arquivo | Conteúdo |
+|---------|----------|
+| `README.md` | Índice da documentação |
+| `architecture.md` | Clean Architecture, camadas, injeção de dependência |
+| `hardware-monitor.md` | Coleta de hardware (LHM, PawnIO, sensores) |
+| `database.md` | Banco SQLite de hardware, seed, versões |
+| `reporting.md` | Relatórios, StressDataCollector, PDF |
+| `ui-shell.md` | Shell, sidebar, navegação, páginas |
+| `stress-test.md` | Motores de estresse (CPU, GPU, RAM, Storage) |
+| `build-setup.md` | Build, instalador, GitHub Release |
+| `known-issues.md` | Problemas conhecidos e limitações |
+| `versioning.md` | Versionamento SemVer, arquivos para atualizar |
+
 ## Arquitetura
 
 - Preserve Clean Architecture, SOLID, MVVM e separação de responsabilidades.
@@ -19,9 +45,11 @@ Toda comunicação, documentação e texto de interface deve ser escrito em port
 2. **ESTUDE antes de qualquer alteração**: Antes de modificar qualquer código, leia o código existente, identifique todos os problemas visuais/técnicos, pesquise referências e abordagens, e só então proponha um plano.
 3. Antes de corrigir um problema, diagnostique e confirme a causa raiz.
 4. Faça alterações pequenas e verificáveis.
-5. Compile e execute os testes disponíveis.
-6. Atualize a documentação e `CHANGELOG_AI.md`.
-7. GIT: Só faça commit e push quando o usuário disser expressamente "pode subir", "sobe", "push" ou "commit". Caso contrário, não toque no Git.
+5. Compile (0 erros, 0 warnings).
+6. **Reabra o app** para o usuário testar (mate processo antigo, copie output, lance o app).
+7. Atualize a documentação em `docs/` e `CHANGELOG_AI.md`.
+8. GIT: Só faça commit e push quando o usuário disser expressamente "pode subir", "sobe", "push" ou "commit". Caso contrário, não toque no Git.
+9. Ao subir, SEMPRE atualize o versionamento seguindo as regras de versionamento.
 
 ## Performance
 
@@ -58,6 +86,7 @@ public const string Version = "1.0.0";
 | `src/EME.Diagnostics.App/app.manifest` | `assemblyIdentity version` | 4-part | `1.0.1.0` |
 | `installer.iss` | `AppVersion` + `OutputBaseFilename` | 4-part | `1.0.1.0` |
 | `CHANGELOG_AI.md` | Tabela de versões | 3-part | `1.0.1` |
+| `README.md` | Tabela de versões no final | 3-part | `1.0.1` |
 
 O display da sidebar (`MainWindow.xaml.cs`) usa `$"v{ProductInfo.Version}  •  Release"` e reflete automaticamente.
 
@@ -100,7 +129,18 @@ NUNCA executar build enquanto o `EME.Diagnostics.App.exe` estiver rodando.
 3. Executar build
 4. Verificar 0 erros
 
-### Workflow pós-build
+### Workflow pós-build (com teste do App)
+
+1. Matar processo antigo se existir
+2. Buildar solução
+3. Verificar 0 erros, 0 warnings
+4. Copiar output para `release/`
+5. Matar processo antigo novamente
+6. Lançar app para o usuário testar: `Start-Process "release\EME.Diagnostics.App.exe" -Verb RunAs`
+7. Aguardar usuário testar e autorizar
+8. Só então fazer commit/push
+
+### Workflow pós-build (sem teste — instalador)
 
 1. Matar processo antigo se existir
 2. Buildar solução
@@ -123,3 +163,21 @@ Output em: `installer\EMEDiagnostics_v{VERSAO}_Setup.exe`
 - `gh release create v{VERSION} --title "v{VERSION}" --notes "notas"`
 - Upload assets: `EMEDiagnostics_v{VERSION}_Setup.exe` + `EMEDiagnostics_v{VERSION}.zip`
 - Atualizar release existente: deletar assets antigos, subir novos
+
+## README
+
+O README.md do repositório deve:
+- Seguir o mesmo padrão do EMECore
+- Conter badges (`.NET`, linguagem, UI framework, banco, licença)
+- Listar funcionalidades em tabela
+- Mostrar instruções de instalação e pré-requisitos
+- Exibir a estrutura do projeto
+- Incluir tabela de versionamento no final com histórico de versões
+
+## Documentação
+
+Toda funcionalidade nova ou alteração deve ser documentada:
+1. Atualize o arquivo `docs/` apropriado
+2. Se necessário, crie um novo arquivo em `docs/`
+3. Atualize `docs/README.md` (índice) se adicionou novo arquivo
+4. Atualize `CHANGELOG_AI.md` com a descrição da mudança

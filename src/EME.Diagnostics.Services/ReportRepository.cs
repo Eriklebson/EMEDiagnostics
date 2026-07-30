@@ -32,7 +32,8 @@ public sealed class ReportRepository : IReportRepository, IDisposable
                 CpuName TEXT,
                 GpuName TEXT,
                 MemoryTotalGb REAL NOT NULL DEFAULT 0,
-                StorageName TEXT
+                StorageName TEXT,
+                Result TEXT NOT NULL DEFAULT 'Pendente'
             );
             CREATE TABLE IF NOT EXISTS ReportEntries (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +48,10 @@ public sealed class ReportRepository : IReportRepository, IDisposable
             );
             """;
         await cmd.ExecuteNonQueryAsync(ct);
+
+        using var migrateCmd = _connection.CreateCommand();
+        migrateCmd.CommandText = "ALTER TABLE Reports ADD COLUMN Result TEXT NOT NULL DEFAULT 'Pendente';";
+        try { await migrateCmd.ExecuteNonQueryAsync(ct); } catch { }
     }
 
     public async Task<long> SaveReportAsync(StressReportDetail report, CancellationToken ct = default)
@@ -56,8 +61,8 @@ public sealed class ReportRepository : IReportRepository, IDisposable
         {
             using var insertReport = _connection.CreateCommand();
             insertReport.CommandText = """
-                INSERT INTO Reports (CreatedAt, TestType, Duration, DurationSeconds, Status, CpuName, GpuName, MemoryTotalGb, StorageName)
-                VALUES ($created, $type, $duration, $durationSec, $status, $cpu, $gpu, $mem, $storage);
+                INSERT INTO Reports (CreatedAt, TestType, Duration, DurationSeconds, Status, CpuName, GpuName, MemoryTotalGb, StorageName, Result)
+                VALUES ($created, $type, $duration, $durationSec, $status, $cpu, $gpu, $mem, $storage, $result);
                 SELECT last_insert_rowid();
                 """;
             insertReport.Parameters.AddWithValue("$created", report.CreatedAt.ToString("O"));
@@ -69,6 +74,7 @@ public sealed class ReportRepository : IReportRepository, IDisposable
             insertReport.Parameters.AddWithValue("$gpu", (object?)report.GpuName ?? DBNull.Value);
             insertReport.Parameters.AddWithValue("$mem", report.MemoryTotalGb);
             insertReport.Parameters.AddWithValue("$storage", (object?)report.StorageName ?? DBNull.Value);
+            insertReport.Parameters.AddWithValue("$result", report.Result);
 
             var reportId = (long)(await insertReport.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
 
@@ -103,7 +109,7 @@ public sealed class ReportRepository : IReportRepository, IDisposable
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
-            SELECT r.Id, r.CreatedAt, r.TestType, r.Duration, r.DurationSeconds, r.Status,
+            SELECT r.Id, r.CreatedAt, r.TestType, r.Duration, r.DurationSeconds, r.Status, r.Result,
                    (SELECT COUNT(*) FROM ReportEntries e WHERE e.ReportId = r.Id) AS EntryCount
             FROM Reports r ORDER BY r.Id DESC;
             """;
@@ -118,7 +124,8 @@ public sealed class ReportRepository : IReportRepository, IDisposable
                 Enum.Parse<ReportTestType>(reader.GetString(2)),
                 TimeSpan.Parse(reader.GetString(3)),
                 reader.GetString(5),
-                reader.GetInt32(6)));
+                reader.GetInt32(7),
+                reader.GetString(6)));
         }
         return results;
     }
@@ -142,7 +149,8 @@ public sealed class ReportRepository : IReportRepository, IDisposable
             reader.IsDBNull(7) ? null : reader.GetString(7),
             reader.GetDouble(8),
             reader.IsDBNull(9) ? null : reader.GetString(9),
-            Array.Empty<ReportEntry>());
+            Array.Empty<ReportEntry>(),
+            reader.GetString(10));
 
         using var entryCmd = _connection.CreateCommand();
         entryCmd.CommandText = "SELECT Component, SensorName, Unit, MinValue, MaxValue, AvgValue FROM ReportEntries WHERE ReportId = $rid ORDER BY Id;";

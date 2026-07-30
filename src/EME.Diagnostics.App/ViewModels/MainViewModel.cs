@@ -411,6 +411,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         await LoadReportsAsync();
     }
 
+    public async Task<StressReportDetail?> GetReportDetailAsync(long id)
+    {
+        return await _reportRepository.GetReportAsync(id);
+    }
+
     public async Task<string> ExportReportPdfAsync(long id)
     {
         var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");

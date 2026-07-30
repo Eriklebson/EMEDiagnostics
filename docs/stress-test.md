@@ -1,0 +1,35 @@
+# Stress Test
+
+Todos os motores implementam contratos em `EME.Diagnostics.Core.Services`:
+- `ICpuStressEngine`
+- `IGpuStressEngine`
+- `IMemoryStressEngine`
+- `IStorageStressEngine`
+
+## CPU
+
+`CpuStressEngine` — threads paralelas com operações matemáticas pesadas (PI computation, prime numbers, etc.).
+Publica `CpuStressMetrics` via evento.
+
+## GPU
+
+`DirectX11GpuStressEngine` — compute shader em memória dedicada, mede dispatches e frame time.
+Backend nativo C++ em `EME.Diagnostics.GpuEngine.dll`.
+Detecta remoção do dispositivo pelo driver e respeita cancelamento.
+Proteção térmica de 90°C usando snapshot do monitor de hardware.
+Cena medieval 1600×900 via ray marching em pixel shader.
+
+## RAM
+
+`MemoryStressEngine` — aloca chunks de 256 MB, preenche com padrões (0xAA, 0x55, 0xFF, 0x00, 0x69), verifica integridade.
+Ao final, força GC e chama `SetProcessWorkingSetSize` para liberar.
+
+## Storage
+
+`StorageStressEngine` — leitura/escrita sequencial e aleatória em arquivo temporário.
+Publica `StorageStressMetrics` com IOPS, throughput, latência.
+
+## Combined
+
+Executa CPU + GPU + RAM + Storage simultaneamente.
+Usa `StressCatalogService` com `CancellationTokenSource` compartilhado.

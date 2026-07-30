@@ -187,7 +187,7 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 8, Padding = new Thickness(16, 22, 16, 16) };
         panel.Children.Add(new TextBlock { Text = "E.M.E", FontSize = 11, CharacterSpacing = 220, Foreground = DesignTokens.Accent, FontWeight = FontWeights.Bold });
         panel.Children.Add(new TextBlock { Text = "Diagnostics", FontSize = 21, Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, -6, 0, 24) });
-        foreach (var item in new[] { ("Dashboard", "\uE80F"), ("Stress Test", "\uE945"), ("Benchmark", "\uE9D9"), ("Hardware", "\uE950"), ("Relatórios", "\uE9F9"), ("Configurações", "\uE713") })
+        foreach (var item in new[] { ("Dashboard", "\uE80F"), ("Stress Test", "\uE945"), ("Hardware", "\uE950"), ("Relatórios", "\uE9F9"), ("Configurações", "\uE713") })
             panel.Children.Add(NavButton(item.Item1, item.Item2));
         panel.Children.Add(new Border { Height = 1, Background = DesignTokens.Border, Margin = new Thickness(8, 16, 8, 8) });
         panel.Children.Add(new TextBlock { Text = $"v{ProductInfo.Version}  •  Release", FontFamily = new FontFamily("Consolas"), FontSize = 10, Foreground = DesignTokens.Muted, Margin = new Thickness(8, 8, 0, 0) });
@@ -210,7 +210,6 @@ public sealed partial class MainWindow : Window
         {
             "Dashboard" => Dashboard(),
             "Stress Test" => StressTest(),
-            "Benchmark" => Placeholder("Benchmark", "A interface está preparada para suítes de benchmark futuras."),
             "Hardware" => Hardware(),
             "Relatórios" => await ReportsPageAsync(),
             "Configurações" => Placeholder("Configurações", "Preferências de atualização, limites térmicos, tema e comportamento dos testes."),
@@ -364,6 +363,8 @@ public sealed partial class MainWindow : Window
 
         foreach (var report in _viewModel.SavedReports)
         {
+            var container = new StackPanel { Spacing = 0 };
+
             var card = new Border
             {
                 Background = DesignTokens.Card,
@@ -379,13 +380,29 @@ public sealed partial class MainWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var info = new StackPanel { Spacing = 4 };
-            info.Children.Add(new TextBlock
+            var resultColor = report.Result switch
             {
-                Text = $"{report.TestType}  •  {report.CreatedAt:dd/MM/yyyy HH:mm}  •  {report.Status}",
-                FontWeight = FontWeights.SemiBold,
-                Foreground = DesignTokens.Text,
-                FontSize = 13
-            });
+                "PASS" => DesignTokens.Accent,
+                _ when report.Result.StartsWith("RECUSADO") => DesignTokens.Danger,
+                _ => DesignTokens.Text
+            };
+            info.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children =
+            {
+                new TextBlock
+                {
+                    Text = $"{report.TestType}  •  {report.CreatedAt:dd/MM/yyyy HH:mm}",
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = DesignTokens.Text,
+                    FontSize = 13
+                },
+                new TextBlock
+                {
+                    Text = report.Result,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = resultColor,
+                    FontSize = 13
+                }
+            }});
             info.Children.Add(new TextBlock
             {
                 Text = $"Duração: {report.Duration:hh\\:mm\\:ss}  •  {report.EntryCount} sensores registrados",
@@ -398,6 +415,7 @@ public sealed partial class MainWindow : Window
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
             var exportBtn = new Button { Content = "Exportar PDF", Padding = new Thickness(12, 6, 12, 6) };
             var deleteBtn = new Button { Content = "Excluir", Padding = new Thickness(12, 6, 12, 6) };
+            var detailsBtn = new Button { Content = "Ver detalhes", Padding = new Thickness(12, 6, 12, 6) };
             var reportId = report.Id;
             exportBtn.Click += async (_, _) =>
             {
@@ -413,12 +431,42 @@ public sealed partial class MainWindow : Window
                 await _viewModel.DeleteReportAsync(reportId);
                 ShowPage();
             };
+            actions.Children.Add(detailsBtn);
             actions.Children.Add(exportBtn);
             actions.Children.Add(deleteBtn);
             Grid.SetColumn(actions, 1);
             row.Children.Add(actions);
             card.Child = row;
-            list.Children.Add(card);
+            container.Children.Add(card);
+
+            var detailPanel = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed, Margin = new Thickness(0, -4, 0, 4) };
+            var detailLoaded = false;
+            detailsBtn.Click += async (_, _) =>
+            {
+                if (detailPanel.Visibility == Visibility.Visible)
+                {
+                    detailPanel.Visibility = Visibility.Collapsed;
+                    detailsBtn.Content = "Ver detalhes";
+                    return;
+                }
+                if (!detailLoaded)
+                {
+                    detailsBtn.IsEnabled = false;
+                    detailsBtn.Content = "Carregando...";
+                    var detail = await _viewModel.GetReportDetailAsync(reportId);
+                    if (detail != null)
+                    {
+                        detailPanel.Children.Clear();
+                        detailPanel.Children.Add(BuildReportDetailTable(detail));
+                        detailLoaded = true;
+                    }
+                    detailsBtn.IsEnabled = true;
+                }
+                detailPanel.Visibility = Visibility.Visible;
+                detailsBtn.Content = "Ocultar";
+            };
+            container.Children.Add(detailPanel);
+            list.Children.Add(container);
         }
 
         if (_viewModel.SavedReports.Count == 0)
@@ -472,6 +520,98 @@ public sealed partial class MainWindow : Window
 
     private static string FormatSensorValue(double? value, string unit) =>
         value.HasValue ? $"{value.Value:0.##}{(string.IsNullOrWhiteSpace(unit) ? "" : $" {unit}")}" : "—";
+
+    private static Border BuildReportDetailTable(StressReportDetail detail)
+    {
+        var stack = new StackPanel { Spacing = 12 };
+
+        // Result badge
+        if (detail.Result != "Pendente")
+        {
+            var isPass = detail.Result == "PASS";
+            stack.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(isPass
+                    ? Windows.UI.Color.FromArgb(26, 76, 203, 160)
+                    : Windows.UI.Color.FromArgb(26, 232, 77, 77)),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8, 12, 8),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = detail.Result,
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 20,
+                    Foreground = isPass ? DesignTokens.Accent : DesignTokens.Danger
+                }
+            });
+        }
+
+        var headerGrid = new Grid { RowSpacing = 2 };
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.7, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.7, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.7, GridUnitType.Star) });
+        AddSensorRow(headerGrid, 0, "COMPONENTE", "SENSOR", "MÍN", "MÉD", "MÁX", true);
+
+        var grouped = detail.Entries.GroupBy(e => e.Component);
+        var row = 1;
+        foreach (var group in grouped)
+        {
+            headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var label = new TextBlock
+            {
+                Text = group.Key,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = DesignTokens.Accent,
+                FontSize = 12,
+                Margin = new Thickness(10, 8, 10, 4)
+            };
+            Grid.SetRow(label, row);
+            Grid.SetColumn(label, 0);
+            Grid.SetColumnSpan(label, 5);
+            headerGrid.Children.Add(label);
+            row++;
+
+            foreach (var entry in group)
+            {
+                headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var cells = new[]
+                {
+                    new TextBlock { Text = "", FontSize = 12 },
+                    new TextBlock { Text = entry.SensorName, FontSize = 12, FontFamily = new FontFamily("Consolas"), Foreground = DesignTokens.Text, Margin = new Thickness(10, 6, 10, 6) },
+                    new TextBlock { Text = FormatSensorValue(entry.MinValue, entry.Unit), FontSize = 12, FontFamily = new FontFamily("Consolas"), Foreground = DesignTokens.Text, Margin = new Thickness(10, 6, 10, 6) },
+                    new TextBlock { Text = FormatSensorValue(entry.AvgValue, entry.Unit), FontSize = 12, FontFamily = new FontFamily("Consolas"), Foreground = DesignTokens.Accent, Margin = new Thickness(10, 6, 10, 6) },
+                    new TextBlock { Text = FormatSensorValue(entry.MaxValue, entry.Unit), FontSize = 12, FontFamily = new FontFamily("Consolas"), Foreground = DesignTokens.Text, Margin = new Thickness(10, 6, 10, 6) }
+                };
+                for (var col = 0; col < cells.Length; col++)
+                {
+                    Grid.SetRow(cells[col], row);
+                    Grid.SetColumn(cells[col], col);
+                    headerGrid.Children.Add(cells[col]);
+                }
+                var divider = new Border { Height = 1, Background = DesignTokens.Border, VerticalAlignment = VerticalAlignment.Top };
+                Grid.SetRow(divider, row);
+                Grid.SetColumnSpan(divider, 5);
+                headerGrid.Children.Add(divider);
+                row++;
+            }
+        }
+
+        stack.Children.Add(headerGrid);
+
+        return new Border
+        {
+            Background = DesignTokens.Inset,
+            BorderBrush = DesignTokens.Border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(16, 12, 16, 12),
+            Margin = new Thickness(0, 0, 0, 4),
+            Child = stack
+        };
+    }
 
     private UIElement StressTest()
     {
@@ -1050,6 +1190,9 @@ public sealed partial class MainWindow : Window
         var page = Page("Hardware", "Sensores brutos normalizados para diagnóstico.");
         page.Children.Add(MetricCard("Processador", s.Cpu.Name, $"Uso {Pct(s.Cpu.Usage)}", $"Temperatura {Temp(s.Cpu.Temperature)}", "\uE950"));
         page.Children.Add(MetricCard("Placa de vídeo", s.Gpu.Name, $"Uso {Pct(s.Gpu.Usage)}", $"Temperatura {Temp(s.Gpu.Temperature)}", "\uE7F4"));
+        var ramUsage = s.MemoryTotalGb > 0 ? $"{(s.MemoryUsedGb / s.MemoryTotalGb * 100):F1}%" : "—";
+        var ramTemp = s.MemoryTemperature.HasValue ? $"Temperatura {s.MemoryTemperature:F0}°C" : "Sem sensor térmico";
+        page.Children.Add(MetricCard("Memória RAM", $"{s.MemoryTotalGb:F1} GB total", $"{s.MemoryUsedGb:F1} GB usados ({ramUsage})", ramTemp, "\uE93B"));
         foreach (var fan in s.Fans) page.Children.Add(MetricCard("Ventoinha", fan.Name, $"{fan.Rpm:F0} RPM", "Leitura em tempo real", "\uE9CA"));
         return Scroll(page);
     }

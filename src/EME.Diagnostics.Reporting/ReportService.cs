@@ -69,6 +69,23 @@ public sealed class ReportService : IReportService
 
                 page.Content().Column(col =>
                 {
+                    // Result stamp
+                    if (report.Result != "Pendente")
+                    {
+                        var isPass = report.Result == "PASS";
+                        col.Item().PaddingBottom(8).Row(row =>
+                        {
+                            row.RelativeItem();
+                            row.AutoItem().Border(3).BorderColor(isPass ? Colors.Green.Darken1 : Colors.Red.Darken1).Padding(12).AlignCenter().Column(stamp =>
+                            {
+                                const float size = 22;
+                                stamp.Item().Text(report.Result)
+                                    .SemiBold().FontSize(size).FontColor(isPass ? Colors.Green.Darken1 : Colors.Red.Darken1);
+                            });
+                            row.RelativeItem();
+                        });
+                    }
+
                     // Summary section
                     col.Item().Row(row =>
                     {

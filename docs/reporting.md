@@ -1,0 +1,38 @@
+# Relatórios
+
+## Fluxo
+
+1. Stress test coleta snapshots via `StressDataCollector.AddSample(snapshot)`
+2. Ao final, `StressDataCollector.SaveReportAsync(duration, status)` agrega min/max/avg por sensor
+3. Salvo em SQLite via `ReportRepository`
+4. Página de Relatórios lista via `GetAllReportsAsync()`
+5. "Exportar PDF" → `ReportService.ExportPdfAsync()` → QuestPDF
+
+## Modelos
+
+```csharp
+enum ReportTestType { Cpu, Gpu, Memory, Storage, Combined }
+
+record StressReportSummary(long Id, DateTime CreatedAt, ReportTestType TestType,
+    TimeSpan Duration, string Status, int EntryCount);
+
+record StressReportDetail(long Id, DateTime CreatedAt, ReportTestType TestType,
+    TimeSpan Duration, string Status, string? CpuName, string? GpuName,
+    double MemoryTotalGb, string? StorageName, IReadOnlyList<ReportEntry> Entries);
+
+record ReportEntry(string Component, string SensorName, string Unit,
+    double? MinValue, double? MaxValue, double? AvgValue);
+```
+
+## PDF (QuestPDF)
+
+Gerado em A4 com Community License. Inclui:
+- Header com tipo de teste e data
+- Resumo do hardware (CPU, GPU, RAM, Storage)
+- Tabelas de sensores agrupados por componente (CPU, GPU, RAM, etc.)
+
+## UI (Relatórios)
+
+- Botão "Atualizar lista" recarrega do banco
+- Cada card tem: "Ver detalhes" (collapse/expand com tabela de entradas), "Exportar PDF", "Excluir"
+- Detalhes carregados sob demanda (`GetReportDetailAsync`)
