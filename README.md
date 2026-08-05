@@ -19,7 +19,7 @@
 | **Dashboard** | Monitoramento em tempo real de CPU, GPU, RAM, disco, rede, fans e periféricos | ✅ |
 | **Teste de CPU** | Estresse multithread com seletor de duração, gráfico de temperatura e uso, botão Parar | ✅ |
 | **Teste de RAM** | Alocação progressiva em chunks de 256 MB até 100% da RAM disponível, com proteção de working set | ✅ |
-| **Teste de GPU** | Motor nativo C++/DirectX 11 com cena procedural medieval (PBR, sombras, bloom) | ✅ |
+| **Teste de GPU** | Motor nativo C++/DirectX 11 com compute shader contínuo e telemetria em tempo real | ✅ |
 | **Teste de Armazenamento** | Escrita e leitura com `FILE_FLAG_NO_BUFFERING`, WriteThrough, 16 streams paralelos | ✅ |
 | **Teste Combinado** | Dispara CPU + GPU + RAM + Storage (leitura) simultaneamente | ✅ |
 | **Gráficos de Telemetria** | Chart em tempo real com valores reais (MB/s, °C, %) por sensor | ✅ |
@@ -95,13 +95,12 @@ EME.Diagnostics.App (WinExe - WinUI 3)
 
 ### Motor GPU
 
-O backend DirectX 11 (`DirectX11GpuStressEngine`) renderiza uma cena procedural medieval completa:
-- Castelo, torres, casas, estrada, árvores, poço, carroça animada
-- Terreno gerado por heightmap (Perlin noise)
-- Iluminação PBR Cook-Torrance com IBL (cubemap sunset)
-- Shadow map PCF 3×3, bloom, ACES tonemapping, neblina por altura
-- Janela dedicada 1600×900 com self-hosting Win32
+O backend DirectX 11 (`DirectX11GpuStressEngine`) executa um compute shader nativo e contínuo em buffers dedicados:
+- Carga paralela configurável por nível de qualidade
+- Medição de dispatches, tempo de execução, VRAM reservada e erros
+- Detecção de remoção do dispositivo pelo driver
 - Proteção térmica (desarme em 90 °C) e cancelamento seguro
+- Sem dependência de cenas, modelos ou texturas externas
 
 ---
 
@@ -161,6 +160,14 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 ---
 
 ## Histórico de Versões
+
+### v1.5.2 (2026-08-05) — Limpeza de recursos legados
+
+| Tipo | Mudança |
+|------|---------|
+| 🧹 Limpeza | Removidos 103 arquivos e aproximadamente 40,5 MB do MedievalTown não utilizado |
+| 🔥 GPU | Documentação alinhada ao compute shader DirectX 11 incorporado atual |
+| ⚙️ Build | 0 erros, 0 warnings. v1.5.2 |
 
 ### v1.5.1 (2026-08-05) — Rede e relatórios remotos
 

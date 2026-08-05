@@ -17,7 +17,7 @@ Publica `CpuStressMetrics` via evento.
 Backend nativo C++ em `EME.Diagnostics.GpuEngine.dll`.
 Detecta remoção do dispositivo pelo driver e respeita cancelamento.
 Proteção térmica de 90°C usando snapshot do monitor de hardware.
-Cena medieval 1600×900 via ray marching em pixel shader.
+O shader é incorporado ao motor nativo e não depende de modelos, cenas ou texturas externas.
 
 ## RAM
 

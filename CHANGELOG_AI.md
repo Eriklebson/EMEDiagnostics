@@ -1,5 +1,10 @@
 # Relatório de desenvolvimento
 
+## 2026-08-05 — v1.5.2 — limpeza de recursos legados
+
+- Removidos 103 arquivos e aproximadamente 40,5 MB do recurso MedievalTown, que não era mais referenciado, compilado ou distribuído pelo teste de GPU.
+- Documentação atualizada para descrever o motor vigente baseado em compute shader DirectX 11 incorporado, sem cenas ou texturas externas.
+
 ## 2026-08-05 — v1.5.1 — Rede e relatórios remotos
 
 - Relatórios recebidos passaram a ficar dentro do card da máquina remetente, identificado por `MachineId`, com estado online ou histórico.
