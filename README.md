@@ -162,6 +162,15 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 
 ## Histórico de Versões
 
+### v1.5.1 (2026-08-05) — Rede e relatórios remotos
+
+| Tipo | Mudança |
+|------|---------|
+| 🌐 Rede | Relatórios recebidos aninhados no card da respectiva máquina, inclusive quando offline |
+| 💾 Persistência | Histórico centralizado em `ProgramData`, com migração automática do armazenamento anterior |
+| 📄 PDF | Cópia exportada aberta automaticamente e reutilizada nas consultas seguintes |
+| ⚙️ Build | 0 erros, 0 warnings. v1.5.1 |
+
 ### v1.5.0 (2026-08-05) — Relatórios, temporizadores e hardware em tempo real
 
 | Tipo | Mudança |

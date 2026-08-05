@@ -37,13 +37,37 @@ public sealed class ServerService : IDisposable
     public ServerService()
     {
         ReportsDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EMEDiagnostics", "network_reports");
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "EME", "Diagnostics", "network_reports");
         Directory.CreateDirectory(ReportsDirectory);
         ReportsIndexPath = Path.Combine(ReportsDirectory, "reports_index.json");
 
+        MigrateLegacyReports();
         LoadPersistedReports();
         EnsureFirewallRule();
+    }
+
+    private void MigrateLegacyReports()
+    {
+        try
+        {
+            var legacyDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "EMEDiagnostics", "network_reports");
+            if (!Directory.Exists(legacyDirectory) ||
+                string.Equals(legacyDirectory, ReportsDirectory, StringComparison.OrdinalIgnoreCase)) return;
+
+            foreach (var sourcePath in Directory.EnumerateFiles(legacyDirectory))
+            {
+                var destinationPath = Path.Combine(ReportsDirectory, Path.GetFileName(sourcePath));
+                if (!File.Exists(destinationPath)) File.Copy(sourcePath, destinationPath);
+            }
+            NetDiagnostics.Log($"Legacy network reports migrated from {legacyDirectory} to {ReportsDirectory}");
+        }
+        catch (Exception ex)
+        {
+            NetDiagnostics.Log($"Failed to migrate legacy reports: {ex.Message}");
+        }
     }
 
     private void LoadPersistedReports()

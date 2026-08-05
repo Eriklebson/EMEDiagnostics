@@ -526,8 +526,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
         Directory.CreateDirectory(docs);
         var destPath = Path.Combine(docs, $"Relatorio_{report.MachineName}_{report.TestType}_{report.Id}.pdf");
-        await Task.Run(() => File.Copy(srcPath, destPath, overwrite: true));
+        if (!File.Exists(destPath))
+            await Task.Run(() => File.Copy(srcPath, destPath, overwrite: false));
         return destPath;
+    }
+
+    public async Task<string?> ExportAndOpenReceivedReportPdfAsync(RemoteReportInfo report)
+    {
+        var path = await ExportReceivedReportPdfAsync(report);
+        if (path is null) return null;
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+        return path;
     }
 
     public async Task<string> ExportReportPdfAsync(long id)

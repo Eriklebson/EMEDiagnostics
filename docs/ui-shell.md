@@ -58,6 +58,10 @@ Grade 3x2 de inventário: Processador, Placa de vídeo, Memória, Placa-mãe, Ar
 ### Relatórios
 Tabela única com colunas ID, Teste, Data, Duração, Pico térmico, Status e ações. A própria linha pode ser expandida e revela um painel integrado com seis métricas (carga média, clock médio, temperatura média, consumo de pico, throttling e erros) e um registro cronológico dos eventos. O botão PDF permanece independente.
 
+### Rede
+
+Quando a instalação atua como servidor principal, cada máquina remota possui um único card com estado online/histórico e seus relatórios recebidos aninhados. Máquinas offline permanecem consultáveis enquanto houver histórico salvo. O botão `PDF` gera a cópia em Documentos na primeira abertura e reutiliza o arquivo nas seguintes.
+
 ## Responsividade
 
 - Dashboard: telemetria em 4 colunas no desktop, 2 em larguras intermediárias e 1 em janelas estreitas; gráficos e painéis inferiores também são empilhados.

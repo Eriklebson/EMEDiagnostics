@@ -19,8 +19,12 @@ O módulo `EME.Diagnostics.Networking` conecta instalações do E.M.E Diagnostic
 2. A máquina principal inicia `ServerService` pela tela Rede.
 3. O cliente define a URL HTTP do servidor encontrado e inicia o heartbeat.
 4. Ao concluir um teste, `MainViewModel` gera o PDF e chama `SendReportAsync`.
-5. O servidor salva o PDF em `network_reports` e atualiza `reports_index.json`.
-6. A tela Rede permite visualizar e exportar os relatórios recebidos.
+5. O servidor principal salva o PDF em `%PROGRAMDATA%\EME\Diagnostics\network_reports` e atualiza `reports_index.json`.
+6. A tela Rede agrupa os relatórios dentro do card da máquina que os enviou e permite reabri-los mesmo quando a máquina estiver offline.
+
+Na primeira execução após a mudança de diretório, arquivos existentes em `%LOCALAPPDATA%\EMEDiagnostics\network_reports` são copiados automaticamente para o armazenamento compartilhado da máquina principal. O diretório em `ProgramData` torna o histórico independente do usuário Windows que abriu o servidor.
+
+O botão `PDF` de um relatório recebido cria uma cópia determinística em `Documents\EMEDiagnostics` apenas quando ela ainda não existe e abre o visualizador padrão. Cliques seguintes apenas abrem o mesmo arquivo.
 
 ## Endpoints internos
 
@@ -43,3 +47,4 @@ O servidor tenta criar regras para TCP 8500 e UDP 8432. Como o aplicativo solici
 - Manter `NetworkConstants` como fonte das portas e intervalos.
 - Mudanças no formato dos anúncios ou endpoints devem ser compatíveis entre cliente e servidor.
 - O índice persistido deve continuar tolerando arquivos removidos manualmente; entradas órfãs são descartadas na carga.
+- Os cards são identificados por `MachineId`, evitando misturar computadores diferentes que tenham nomes iguais.

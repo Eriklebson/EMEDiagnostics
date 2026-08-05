@@ -1,5 +1,11 @@
 # Relatório de desenvolvimento
 
+## 2026-08-05 — v1.5.1 — Rede e relatórios remotos
+
+- Relatórios recebidos passaram a ficar dentro do card da máquina remetente, identificado por `MachineId`, com estado online ou histórico.
+- PDFs e índice do servidor agora ficam em `%PROGRAMDATA%\EME\Diagnostics\network_reports`, com migração automática do armazenamento legado em `%LOCALAPPDATA%`.
+- O botão PDF remoto abre automaticamente a cópia exportada e reutiliza o arquivo existente nas próximas consultas.
+
 ## 2026-08-05 — v1.5.0 — relatórios, temporizadores e hardware em tempo real
 
 - Instalador reforçado para sempre iniciar o aplicativo como administrador: além do manifesto `requireAdministrator`, registra `RUNASADMIN` para o executável instalado e remove a regra na desinstalação.

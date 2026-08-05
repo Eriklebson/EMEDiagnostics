@@ -28,6 +28,7 @@ Flags do instalador:
 - `SolidCompression=yes` — compressão LZMA2/ultra64
 - Instala PawnIO_setup.exe automaticamente ao final (`CurStepChanged(ssPostInstall)`)
 - Cria diretório em `{commonappdata}\EME\HardwareDatabase` com permissão `users-modify`
+- Cria `{commonappdata}\EME\Diagnostics\network_reports` para o histórico persistente de PDFs recebidos pela máquina principal
 
 Output: `installer\EMEDiagnostics_v{VERSAO}_Setup.exe`
 

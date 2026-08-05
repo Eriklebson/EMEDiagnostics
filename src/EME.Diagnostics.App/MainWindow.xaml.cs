@@ -118,6 +118,7 @@ public sealed partial class MainWindow : Window
                     UpdateCharts();
                 }
                 if (e.PropertyName == nameof(MainViewModel.ReceivedReports) && _viewModel.CurrentPage == "Rede") ShowPage();
+                if (e.PropertyName == nameof(MainViewModel.ConnectedClients) && _viewModel.CurrentPage == "Rede") ShowPage();
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
                 {
@@ -1515,14 +1516,17 @@ public sealed partial class MainWindow : Window
 
         if (_viewModel.IsServerMode)
         {
-            // Connected clients section
-            contentStack.Children.Add(new TextBlock { Text = $"Máquinas Conectadas ({_viewModel.ConnectedClients.Count})", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+            var machineIds = _viewModel.ConnectedClients.Select(client => client.Id)
+                .Concat(_viewModel.ReceivedReports.Select(report => report.MachineId))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            contentStack.Children.Add(new TextBlock { Text = $"Máquinas ({machineIds.Length})", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
 
-            if (_viewModel.ConnectedClients.Count == 0)
+            if (machineIds.Length == 0)
             {
                 contentStack.Children.Add(new TextBlock
                 {
-                    Text = "Nenhuma máquina conectada. Aguardando conexões...",
+                    Text = "Nenhuma máquina conectada e nenhum relatório recebido. Aguardando conexões...",
                     Foreground = DesignTokens.Muted,
                     FontStyle = Windows.UI.Text.FontStyle.Italic,
                     Margin = new Thickness(0, 4, 0, 8)
@@ -1530,119 +1534,12 @@ public sealed partial class MainWindow : Window
             }
             else
             {
-                foreach (var client in _viewModel.ConnectedClients)
+                foreach (var machineId in machineIds.OrderBy(id => id))
                 {
-                    var clientCard = new Border
-                    {
-                        Background = DesignTokens.Card,
-                        BorderBrush = DesignTokens.Border,
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = DesignTokens.CardRadius,
-                        Padding = new Thickness(14),
-                        Child = new Grid()
-                    };
-                    var grid = (Grid)clientCard.Child;
-                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                    var clientInfo = new StackPanel { Spacing = 2 };
-                    clientInfo.Children.Add(new TextBlock { Text = client.HostName, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, FontSize = 13 });
-                    clientInfo.Children.Add(new TextBlock { Text = $"IP: {client.IpAddress}", FontSize = 10, Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas") });
-                    clientInfo.Children.Add(new TextBlock { Text = $"Conectado em: {client.LastSeen:HH:mm:ss}", FontSize = 10, Foreground = DesignTokens.Muted });
-                    grid.Children.Add(clientInfo);
-
-                    var onlineBadge = new Border
-                    {
-                        Background = DesignTokens.Accent,
-                        CornerRadius = new CornerRadius(6),
-                        Padding = new Thickness(8, 3, 8, 3),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Child = new TextBlock { Text = "Online", FontSize = 10, Foreground = DesignTokens.Text }
-                    };
-                    Grid.SetColumn(onlineBadge, 1);
-                    grid.Children.Add(onlineBadge);
-
-                    contentStack.Children.Add(clientCard);
-                }
-            }
-
-            // Received reports section
-            contentStack.Children.Add(new TextBlock { Text = $"Relatórios Recebidos ({_viewModel.ReceivedReports.Count})", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, Margin = new Thickness(0, 8, 0, 0) });
-
-            if (_viewModel.ReceivedReports.Count == 0)
-            {
-                contentStack.Children.Add(new TextBlock
-                {
-                    Text = "Nenhum relatório recebido ainda.",
-                    Foreground = DesignTokens.Muted,
-                    FontStyle = Windows.UI.Text.FontStyle.Italic,
-                    Margin = new Thickness(0, 4, 0, 8)
-                });
-            }
-            else
-            {
-                foreach (var group in _viewModel.ReceivedReports
-                    .GroupBy(r => r.MachineName)
-                    .OrderByDescending(g => g.Max(r => r.CreatedAt)))
-                {
-                    var machineName = group.Key;
-                    var machineReports = group.OrderBy(r => r.CreatedAt).ToList();
-                    var isCollapsed = _collapsedMachines.Contains(machineName);
-
-                    var machineSection = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
-
-                    var machineHeader = new Grid();
-                    machineHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    machineHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                    var machineToggle = new Button
-                    {
-                        Padding = new Thickness(10, 4, 10, 4),
-                        HorizontalContentAlignment = HorizontalAlignment.Left,
-                        Background = DesignTokens.Card,
-                        BorderBrush = DesignTokens.Border,
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = DesignTokens.CardRadius
-                    };
-
-                    var headerInner = new StackPanel { Spacing = 2 };
-                    headerInner.Children.Add(new TextBlock
-                    {
-                        Text = $"{machineName}  ({machineReports.Count} relatório{(machineReports.Count > 1 ? "s" : "")})",
-                        FontWeight = FontWeights.SemiBold,
-                        Foreground = DesignTokens.Text,
-                        FontSize = 14
-                    });
-                    var lastSeen = machineReports[^1].CreatedAt;
-                    headerInner.Children.Add(new TextBlock
-                    {
-                        Text = $"Último envio: {lastSeen:dd/MM/yyyy HH:mm}  •  {(isCollapsed ? "Expandir" : "Recolher")}",
-                        FontSize = 10,
-                        Foreground = DesignTokens.Muted
-                    });
-                    machineToggle.Content = headerInner;
-
-                    machineHeader.Children.Add(machineToggle);
-
-                    var machineReportsPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 6, 0, 0) };
-                    foreach (var r in machineReports)
-                    {
-                        var reportContainer = BuildRemoteReportCard(r);
-                        machineReportsPanel.Children.Add(reportContainer);
-                    }
-
-                    if (isCollapsed) machineReportsPanel.Visibility = Visibility.Collapsed;
-
-                    machineToggle.Click += (_, _) =>
-                    {
-                        if (_collapsedMachines.Contains(machineName)) _collapsedMachines.Remove(machineName);
-                        else _collapsedMachines.Add(machineName);
-                        ShowPage();
-                    };
-
-                    machineSection.Children.Add(machineHeader);
-                    machineSection.Children.Add(machineReportsPanel);
-                    contentStack.Children.Add(machineSection);
+                    var client = _viewModel.ConnectedClients.FirstOrDefault(item => string.Equals(item.Id, machineId, StringComparison.OrdinalIgnoreCase));
+                    var reports = _viewModel.ReceivedReports.Where(report => string.Equals(report.MachineId, machineId, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(report => report.CreatedAt).ToArray();
+                    contentStack.Children.Add(BuildRemoteMachineCard(machineId, client, reports));
                 }
             }
         }
@@ -1680,10 +1577,66 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        if (!_viewModel.IsServerMode && _viewModel.ReceivedReports.Count > 0)
+        {
+            contentStack.Children.Add(new TextBlock { Text = $"Relatórios armazenados ({_viewModel.ReceivedReports.Count})", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, Margin = new Thickness(0, 8, 0, 0) });
+            foreach (var group in _viewModel.ReceivedReports.GroupBy(report => report.MachineId).OrderByDescending(group => group.Max(report => report.CreatedAt)))
+                contentStack.Children.Add(BuildRemoteMachineCard(group.Key, null, group.OrderByDescending(report => report.CreatedAt).ToArray()));
+        }
+
         page.Children.Add(contentArea);
         var outerGrid = new Grid();
         outerGrid.Children.Add(page);
         return outerGrid;
+    }
+
+    private Border BuildRemoteMachineCard(string machineId, EME.Diagnostics.Networking.Models.RemoteMachineInfo? client,
+        IReadOnlyList<EME.Diagnostics.Networking.Models.RemoteReportInfo> reports)
+    {
+        var machineName = client?.HostName ?? reports.FirstOrDefault()?.MachineName ?? machineId;
+        var isCollapsed = _collapsedMachines.Contains(machineId);
+        var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var info = new StackPanel { Spacing = 3 };
+        info.Children.Add(new TextBlock { Text = $"{machineName}  ({reports.Count} relatório{(reports.Count == 1 ? "" : "s")})", FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, FontSize = 14 });
+        info.Children.Add(new TextBlock
+        {
+            Text = client is not null
+                ? $"IP: {client.IpAddress}  •  Atualizado: {client.LastSeen:HH:mm:ss}"
+                : $"Histórico salvo na máquina principal  •  {(isCollapsed ? "Expandir" : "Recolher")}",
+            FontSize = 10, Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas")
+        });
+        header.Children.Add(info);
+        var badge = new Border
+        {
+            Background = client is not null ? DesignTokens.Accent : DesignTokens.Inset,
+            BorderBrush = DesignTokens.Border,
+            BorderThickness = new Thickness(client is not null ? 0 : 1),
+            CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 3, 8, 3), VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock { Text = client is not null ? "Online" : "Histórico", FontSize = 10, Foreground = client is not null ? DesignTokens.Background : DesignTokens.Muted }
+        };
+        Grid.SetColumn(badge, 1);
+        header.Children.Add(badge);
+
+        var toggle = new Button { Content = header, HorizontalContentAlignment = HorizontalAlignment.Stretch, Background = null, BorderThickness = new Thickness(0), Padding = new Thickness(0) };
+        toggle.Click += (_, _) =>
+        {
+            if (_collapsedMachines.Contains(machineId)) _collapsedMachines.Remove(machineId);
+            else _collapsedMachines.Add(machineId);
+            ShowPage();
+        };
+
+        var stack = new StackPanel { Spacing = 8 };
+        stack.Children.Add(toggle);
+        var reportsPanel = new StackPanel { Spacing = 5 };
+        if (reports.Count == 0)
+            reportsPanel.Children.Add(new TextBlock { Text = "Nenhum relatório recebido desta máquina.", FontSize = 11, Foreground = DesignTokens.Muted, FontStyle = Windows.UI.Text.FontStyle.Italic });
+        else
+            foreach (var report in reports) reportsPanel.Children.Add(BuildRemoteReportCard(report));
+        reportsPanel.Visibility = isCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        stack.Children.Add(reportsPanel);
+        return new Border { Background = DesignTokens.Card, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(1), CornerRadius = DesignTokens.CardRadius, Padding = new Thickness(14), Child = stack };
     }
 
     private StackPanel BuildRemoteReportCard(EME.Diagnostics.Networking.Models.RemoteReportInfo r)
@@ -1722,22 +1675,22 @@ public sealed partial class MainWindow : Window
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         var detailsBtn = new Button { Content = "Ver detalhes", Padding = new Thickness(12, 6, 12, 6) };
-        var exportBtn = new Button { Content = "Exportar PDF", Padding = new Thickness(12, 6, 12, 6) };
+        var exportBtn = new Button { Content = "PDF", Padding = new Thickness(12, 6, 12, 6) };
         var localReport = r;
         exportBtn.Click += async (_, _) =>
         {
             try
             {
                 exportBtn.IsEnabled = false;
-                exportBtn.Content = "Exportando...";
-                var path = await _viewModel.ExportReceivedReportPdfAsync(localReport);
-                _status.Text = path != null ? $"PDF exportado: {path}" : "Arquivo PDF não encontrado no servidor.";
+                exportBtn.Content = "Abrindo...";
+                var path = await _viewModel.ExportAndOpenReceivedReportPdfAsync(localReport);
+                _status.Text = path != null ? $"PDF aberto: {path}" : "Arquivo PDF não encontrado na máquina principal.";
             }
             catch (Exception ex) { _status.Text = $"Erro ao exportar: {ex.Message}"; }
             finally
             {
                 exportBtn.IsEnabled = true;
-                exportBtn.Content = "Exportar PDF";
+                exportBtn.Content = "PDF";
             }
         };
         actions.Children.Add(detailsBtn);
