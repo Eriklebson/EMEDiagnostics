@@ -534,8 +534,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
         Directory.CreateDirectory(docs);
+        var existingPath = Directory.EnumerateFiles(docs, $"Relatorio_{id}_*.pdf")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+        if (existingPath is not null)
+            return existingPath;
+
         var path = Path.Combine(docs, $"Relatorio_{id}_{DateTime.Now:yyyy-MM-dd_HHmmss}.pdf");
         return await _reportService.ExportPdfAsync(id, path);
+    }
+
+    public async Task<string> ExportAndOpenReportPdfAsync(long id)
+    {
+        var path = await ExportReportPdfAsync(id);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+        return path;
     }
 
     private static MEMORYSTATUSEX GetMemoryStatus()

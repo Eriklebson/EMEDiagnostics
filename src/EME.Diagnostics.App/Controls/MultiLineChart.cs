@@ -38,8 +38,8 @@ public sealed partial class MultiLineChart : Grid
         Children.Add(header);
 
         var legend = new Grid { ColumnSpacing = 14, RowSpacing = 4, Margin = new Thickness(0, 0, 0, 8) };
-        for (var index = 0; index < Math.Min(3, _series.Count); index++) legend.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        for (var index = 0; index < Math.Ceiling(_series.Count / 3d); index++) legend.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        for (var index = 0; index < _series.Count; index++) legend.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        legend.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         for (var index = 0; index < _series.Count; index++)
         {
             var state = _series[index];
@@ -51,8 +51,7 @@ public sealed partial class MultiLineChart : Grid
                 state.ValueText = new TextBlock { Text = "—", FontFamily = new FontFamily("Consolas"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = state.Color };
                 item.Children.Add(state.ValueText);
             }
-            Grid.SetColumn(item, index % 3);
-            Grid.SetRow(item, index / 3);
+            Grid.SetColumn(item, index);
             legend.Children.Add(item);
         }
         Grid.SetRow(legend, 1);

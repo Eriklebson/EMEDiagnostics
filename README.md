@@ -162,6 +162,16 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 
 ## Histórico de Versões
 
+### v1.5.0 (2026-08-05) — Relatórios, temporizadores e hardware em tempo real
+
+| Tipo | Mudança |
+|------|---------|
+| 🔥 Stress Test | Duração e cronômetro independentes por card, com suporte a execução ilimitada |
+| 📊 Hardware | Cards atualizados continuamente e sensores Super I/O/Embedded Controller agregados à placa-mãe |
+| 📄 Relatórios | Pico térmico, exclusão confirmada e reutilização do PDF salvo |
+| 🔒 Instalador | Elevação administrativa reforçada por manifesto e `RUNASADMIN` |
+| ⚙️ Build | 0 erros, 0 warnings. v1.5.0 |
+
 ### v1.4.0 (2026-08-05) — Telemetria avançada e Stress Test
 
 | Tipo | Mudança |

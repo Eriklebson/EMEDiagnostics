@@ -36,5 +36,7 @@ Gerado em A4 com Community License. Inclui:
 - A tabela apresenta ID, teste, data, duração, pico térmico, status e ações.
 - Um clique na linha abre ou fecha o painel integrado de detalhes.
 - O painel expandido mostra seis métricas resumidas e o registro cronológico do teste.
-- O botão PDF é independente do collapse e exporta o documento para `Documents\EMEDiagnostics`.
+- O botão PDF é independente do collapse, exporta o documento para `Documents\EMEDiagnostics` e abre o arquivo automaticamente no visualizador padrão do Windows. Se aquele relatório já possuir um PDF salvo, o arquivo mais recente é apenas aberto novamente, sem uma nova geração.
+- A coluna Pico térmico usa o maior `MaxValue` entre as entradas de temperatura salvas no relatório.
+- O botão de lixeira exclui o relatório local após confirmação e atualiza a tabela.
 - Em janelas estreitas, a tabela conserva as colunas e disponibiliza rolagem horizontal.

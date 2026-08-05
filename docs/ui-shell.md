@@ -46,12 +46,14 @@ Somente os valores térmicos recebem cor por faixa: verde abaixo de 60 °C, âmb
 ### Stress Test
 Grade 2x2 de cartões para CPU, GPU, memória e disco. Cada cartão apresenta identificação, ações iniciar/parar, métricas reais específicas do componente, gráfico multissérie e estado de execução. CPU mostra uso/CPU/PKG; GPU mostra uso/temperatura e agrupa VRAM total, usada e livre em um único bloco compacto; memória mostra usada/total/livre; disco mostra uso/leitura/escrita. Os textos dos blocos usam as cores das respectivas linhas, enquanto a legenda do gráfico evita repetir os valores. A ação global “Executar todos” aciona o teste combinado.
 
+A legenda multissérie da GPU permanece em uma única linha. Cada card possui seletor de duração independente e cronômetro no formato `decorrido/limite`, incluindo suporte ao limite ilimitado (`--:--:--`).
+
 O cabeçalho do Stress Test inclui duração global (30 s, 1 min, 5 min, 10 min, 30 min, 1 h, ilimitado ou minutos personalizados). Durante o teste combinado, o mesmo botão muda para `Parar todos` e o seletor de duração é bloqueado.
 
 O subtítulo de cada cartão identifica o hardware real detectado, e não ferramentas de benchmark de referência: modelo da CPU, modelo da GPU, módulo de memória físico e unidade de armazenamento.
 
 ### Hardware
-Grade 3x2 de inventário: Processador, Placa de vídeo, Memória, Placa-mãe, Armazenamento e Térmico. Cada cartão apresenta pares chave/valor provenientes da telemetria real disponível.
+Grade 3x2 de inventário: Processador, Placa de vídeo, Memória, Placa-mãe, Armazenamento e Térmico. Cada cartão apresenta pares chave/valor provenientes da telemetria real e os atualiza continuamente. O card da placa-mãe agrega os sensores do Super I/O ou controlador embarcado associado ao modelo identificado.
 
 ### Relatórios
 Tabela única com colunas ID, Teste, Data, Duração, Pico térmico, Status e ações. A própria linha pode ser expandida e revela um painel integrado com seis métricas (carga média, clock médio, temperatura média, consumo de pico, throttling e erros) e um registro cronológico dos eventos. O botão PDF permanece independente.

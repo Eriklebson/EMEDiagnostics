@@ -35,3 +35,5 @@ Executa CPU + GPU + RAM + Storage simultaneamente.
 Usa `StressCatalogService` com `CancellationTokenSource` compartilhado.
 
 Na página principal, o controle combinado usa um único botão que alterna entre `Executar todos` e `Parar todos`. A duração pode ser selecionada entre 30 segundos, 1, 5, 10 ou 30 minutos, 1 hora, execução ilimitada e um valor personalizado informado em minutos. O seletor fica desabilitado durante a execução.
+
+Cada card de CPU, GPU, memória e disco também possui seu próprio seletor com as mesmas durações, permitindo executar testes separados com limites diferentes. Durante a execução, o card exibe tempo decorrido e limite no formato `00:13/30:00` ou `00:15/01:00:00`; testes ilimitados usam `--:--:--` no limite. O seletor individual fica bloqueado somente enquanto seu teste ou o teste combinado estiver ativo.

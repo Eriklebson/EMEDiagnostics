@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     private readonly ContentControl _content = new();
     private readonly TextBlock _status = new();
     private readonly Dictionary<string, Button> _navButtons = [];
+    private readonly Dictionary<string, TextBlock> _hardwareValueTexts = [];
     private TextBlock? _dashboardCpuValue;
     private TextBlock? _dashboardGpuValue;
     private TextBlock? _dashboardCpuTemperatureValue;
@@ -45,6 +46,18 @@ public sealed partial class MainWindow : Window
     private IReadOnlyDictionary<string, TextBlock> _gpuStressStats = new Dictionary<string, TextBlock>();
     private IReadOnlyDictionary<string, TextBlock> _memoryStressStats = new Dictionary<string, TextBlock>();
     private IReadOnlyDictionary<string, TextBlock> _storageStressStats = new Dictionary<string, TextBlock>();
+    private TextBlock? _cpuStressTime;
+    private TextBlock? _gpuStressTime;
+    private TextBlock? _memoryStressTime;
+    private TextBlock? _storageStressTime;
+    private DurationSelector? _cpuDurationSelector;
+    private DurationSelector? _gpuDurationSelector;
+    private DurationSelector? _memoryDurationSelector;
+    private DurationSelector? _storageDurationSelector;
+    private TimeSpan _cpuSelectedDuration = TimeSpan.FromMinutes(1);
+    private TimeSpan _gpuSelectedDuration = TimeSpan.FromMinutes(1);
+    private TimeSpan _memorySelectedDuration = TimeSpan.FromMinutes(1);
+    private TimeSpan _storageSelectedDuration = TimeSpan.FromMinutes(1);
     private string _dashboardStructureSignature = string.Empty;
     private TextBlock? _cpuStressState;
     private TextBlock? _cpuStressMetrics;
@@ -99,6 +112,7 @@ public sealed partial class MainWindow : Window
                 if (e.PropertyName == nameof(MainViewModel.CurrentPage)) ShowPage();
                 if (e.PropertyName == nameof(MainViewModel.Status)) _status.Text = _viewModel.Status;
                 if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Dashboard") UpdateDashboard();
+                if (e.PropertyName == nameof(MainViewModel.Snapshot) && _viewModel.CurrentPage == "Hardware") UpdateHardware();
                 if (e.PropertyName == nameof(MainViewModel.Snapshot))
                 {
                     UpdateCharts();
@@ -176,6 +190,7 @@ public sealed partial class MainWindow : Window
         _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
         AddStressChartSamples(_viewModel.Snapshot);
         UpdateStressHardwareStats(_viewModel.Snapshot);
+        UpdateStressTimers();
     }
 
     private void ChartTimerLoopAsync(CancellationToken ct)
@@ -803,6 +818,7 @@ public sealed partial class MainWindow : Window
 
         foreach (var report in _viewModel.SavedReports)
         {
+            StressReportDetail? cachedReportDetail = await _viewModel.GetReportDetailAsync(report.Id);
             var wrapper = new StackPanel { Spacing = 0 };
             var row = ReportRowGrid();
             row.BorderBrush = DesignTokens.Border;
@@ -811,7 +827,7 @@ public sealed partial class MainWindow : Window
             var cells = new[]
             {
                 $"RPT-{report.Id:0000}", ReportName(report.TestType), report.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
-                report.Duration.TotalMinutes >= 1 ? $"{report.Duration.TotalMinutes:F0} min" : $"{report.Duration.TotalSeconds:F0} s", "—", statusText
+                report.Duration.TotalMinutes >= 1 ? $"{report.Duration.TotalMinutes:F0} min" : $"{report.Duration.TotalSeconds:F0} s", ReportPeakTemperature(cachedReportDetail), statusText
             };
             for (var index = 0; index < cells.Length; index++)
             {
@@ -846,6 +862,18 @@ public sealed partial class MainWindow : Window
             pdf.Height = 30;
             pdf.Padding = new Thickness(10, 6, 10, 6);
             pdf.CornerRadius = new CornerRadius(6);
+            var delete = SecondaryButton(string.Empty);
+            delete.Content = new Viewbox
+            {
+                Width = 14,
+                Height = 14,
+                Child = new SymbolIcon(Symbol.Delete) { Foreground = DesignTokens.Danger }
+            };
+            delete.Width = 32;
+            delete.Height = 30;
+            delete.Padding = new Thickness(7);
+            delete.CornerRadius = new CornerRadius(6);
+            ToolTipService.SetToolTip(delete, "Excluir relatório");
             var expandGlyph = new FontIcon
             {
                 Glyph = "\uE70D",
@@ -856,6 +884,7 @@ public sealed partial class MainWindow : Window
                 VerticalAlignment = VerticalAlignment.Center
             };
             actions.Children.Add(pdf);
+            actions.Children.Add(delete);
             actions.Children.Add(expandGlyph);
             Grid.SetColumn(actions, 6);
             row.Children.Add(actions);
@@ -872,8 +901,8 @@ public sealed partial class MainWindow : Window
                 }
                 if (detail.Children.Count == 0)
                 {
-                    var reportDetail = await _viewModel.GetReportDetailAsync(report.Id);
-                    if (reportDetail != null) detail.Children.Add(BuildReportCollapse(report, reportDetail));
+                    cachedReportDetail ??= await _viewModel.GetReportDetailAsync(report.Id);
+                    if (cachedReportDetail != null) detail.Children.Add(BuildReportCollapse(report, cachedReportDetail));
                 }
                 detail.Visibility = Visibility.Visible;
                 expandGlyph.Glyph = "\uE70E";
@@ -881,10 +910,27 @@ public sealed partial class MainWindow : Window
             row.Tapped += async (_, _) => await ToggleReportAsync();
             pdf.Click += async (_, _) =>
             {
-                try { _status.Text = $"PDF exportado: {await _viewModel.ExportReportPdfAsync(report.Id)}"; }
+                try { _status.Text = $"PDF exportado e aberto: {await _viewModel.ExportAndOpenReportPdfAsync(report.Id)}"; }
                 catch (Exception ex) { _status.Text = $"Erro ao exportar: {ex.Message}"; }
             };
             pdf.Tapped += (_, eventArgs) => eventArgs.Handled = true;
+            delete.Click += async (_, _) =>
+            {
+                var confirmation = new ContentDialog
+                {
+                    XamlRoot = row.XamlRoot,
+                    Title = "Excluir relatório?",
+                    Content = $"O relatório RPT-{report.Id:0000} será apagado permanentemente.",
+                    PrimaryButtonText = "Excluir",
+                    CloseButtonText = "Cancelar",
+                    DefaultButton = ContentDialogButton.Close
+                };
+                if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
+                await _viewModel.DeleteReportAsync(report.Id);
+                _status.Text = $"Relatório RPT-{report.Id:0000} excluído.";
+                ShowPage();
+            };
+            delete.Tapped += (_, eventArgs) => eventArgs.Handled = true;
             wrapper.Children.Add(detail);
             table.Children.Add(wrapper);
         }
@@ -892,7 +938,7 @@ public sealed partial class MainWindow : Window
         if (_viewModel.SavedReports.Count == 0)
             table.Children.Add(new TextBlock { Text = "Nenhum relatório salvo.", Foreground = DesignTokens.Muted, Margin = new Thickness(20) });
 
-        table.MinWidth = 900;
+        table.MinWidth = 960;
         var tableScroll = new ScrollViewer
         {
             Content = table,
@@ -907,7 +953,7 @@ public sealed partial class MainWindow : Window
     private static Grid ReportRowGrid()
     {
         var grid = new Grid();
-        foreach (var width in new[] { 0.8, 1.35, 1.45, 0.9, 1.05, 1.1, 0.9 })
+        foreach (var width in new[] { 0.8, 1.35, 1.45, 0.9, 1.05, 1.1, 1.15 })
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width, GridUnitType.Star) });
         return grid;
     }
@@ -950,6 +996,21 @@ public sealed partial class MainWindow : Window
         ReportTestType.Storage => "Disco",
         _ => "Combined"
     };
+
+    private static string ReportPeakTemperature(StressReportDetail? detail)
+    {
+        if (detail == null) return "—";
+        var peak = detail.Entries
+            .Where(entry => entry.MaxValue.HasValue &&
+                (entry.Unit.Contains("°C", StringComparison.OrdinalIgnoreCase) ||
+                 entry.SensorName.Contains("temp", StringComparison.OrdinalIgnoreCase) ||
+                 entry.SensorName.Contains("tctl", StringComparison.OrdinalIgnoreCase) ||
+                 entry.SensorName.Contains("tdie", StringComparison.OrdinalIgnoreCase)))
+            .Select(entry => entry.MaxValue!.Value)
+            .DefaultIfEmpty(double.NaN)
+            .Max();
+        return double.IsNaN(peak) ? "—" : $"{peak:F0} °C";
+    }
 
     private static Border BuildReportCollapse(StressReportSummary summary, StressReportDetail detail)
     {
@@ -1715,6 +1776,14 @@ public sealed partial class MainWindow : Window
 
     private UIElement StressTestDashboard()
     {
+        _cpuDurationSelector = BuildCardDurationSelector();
+        _gpuDurationSelector = BuildCardDurationSelector();
+        _memoryDurationSelector = BuildCardDurationSelector();
+        _storageDurationSelector = BuildCardDurationSelector();
+        _cpuStressTime = StressTimeText();
+        _gpuStressTime = StressTimeText();
+        _memoryStressTime = StressTimeText();
+        _storageStressTime = StressTimeText();
         _combinedStressStart = PrimaryButton("▷  Executar todos");
         _combinedStressStop = null;
         _combinedStressStart.Click += async (_, _) =>
@@ -1730,6 +1799,10 @@ public sealed partial class MainWindow : Window
                 _status.Text = "Informe uma duração personalizada válida em minutos.";
                 return;
             }
+            _cpuSelectedDuration = duration.Value;
+            _gpuSelectedDuration = duration.Value;
+            _memorySelectedDuration = duration.Value;
+            _storageSelectedDuration = duration.Value;
             await _viewModel.StartCombinedStressAsync(duration.Value);
         };
         _combinedDurationControl = BuildCombinedDurationSelector();
@@ -1767,28 +1840,46 @@ public sealed partial class MainWindow : Window
         _cpuStressStop = SecondaryButton("□  Parar");
         _cpuStressState = StatusLine("Aguardando início");
         _cpuStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
-        _cpuStressStart.Click += async (_, _) => await _viewModel.StartCpuStressAsync(TimeSpan.FromMinutes(2));
+        _cpuStressStart.Click += async (_, _) =>
+        {
+            var duration = ReadCardDuration(_cpuDurationSelector);
+            if (!duration.HasValue) return;
+            _cpuSelectedDuration = duration.Value;
+            await _viewModel.StartCpuStressAsync(duration.Value);
+        };
         _cpuStressStop.Click += (_, _) => _viewModel.StopCpuStress();
         _cpuStressStats = AddStressVisualCard(grid, 0, 0, "CPU Stress", snapshot.Cpu.Name, "\uE950", DesignTokens.Accent,
-            [("usage", "USO", "#42D286"), ("cpuTemp", "TEMP CPU", "#FFB21C"), ("pkgTemp", "TEMP PKG", "#FF5C6C")], _compactCpuStressChart, _cpuStressState, _cpuStressStart, _cpuStressStop);
+            [("usage", "USO", "#42D286"), ("cpuTemp", "TEMP CPU", "#FFB21C"), ("pkgTemp", "TEMP PKG", "#FF5C6C")], _compactCpuStressChart, _cpuStressState, _cpuStressTime, _cpuDurationSelector.Root, _cpuStressStart, _cpuStressStop);
 
         _gpuStressStart = SecondaryButton("▷  Iniciar");
         _gpuStressStop = SecondaryButton("□  Parar");
         _gpuStressState = StatusLine("Aguardando início");
         _gpuStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
-        _gpuStressStart.Click += async (_, _) => await _viewModel.StartGpuStressAsync(TimeSpan.FromMinutes(2));
+        _gpuStressStart.Click += async (_, _) =>
+        {
+            var duration = ReadCardDuration(_gpuDurationSelector);
+            if (!duration.HasValue) return;
+            _gpuSelectedDuration = duration.Value;
+            await _viewModel.StartGpuStressAsync(duration.Value);
+        };
         _gpuStressStop.Click += (_, _) => _viewModel.StopGpuStress();
         _gpuStressStats = AddStressVisualCard(grid, 1, 0, "GPU Stress", snapshot.Gpu.Name, "\uE7F4", DesignTokens.Info,
-            [("usage", "USO", "#43A8E5"), ("temperature", "TEMP GPU", "#FFB21C"), ("vramTotal", "TOTAL", "#A970FF"), ("vramUsed", "USO", "#FF7B43"), ("vramFree", "LIVRE", "#42D286")], _compactGpuStressChart, _gpuStressState, _gpuStressStart, _gpuStressStop);
+            [("usage", "USO", "#43A8E5"), ("temperature", "TEMP GPU", "#FFB21C"), ("vramTotal", "TOTAL", "#A970FF"), ("vramUsed", "USO", "#FF7B43"), ("vramFree", "LIVRE", "#42D286")], _compactGpuStressChart, _gpuStressState, _gpuStressTime, _gpuDurationSelector.Root, _gpuStressStart, _gpuStressStop);
 
         _memoryStressStart = SecondaryButton("▷  Iniciar");
         _memoryStressStop = SecondaryButton("□  Parar");
         _memoryStressState = StatusLine("Aguardando início");
         _memoryStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
-        _memoryStressStart.Click += async (_, _) => await _viewModel.StartMemoryStressAsync(TimeSpan.FromMinutes(2));
+        _memoryStressStart.Click += async (_, _) =>
+        {
+            var duration = ReadCardDuration(_memoryDurationSelector);
+            if (!duration.HasValue) return;
+            _memorySelectedDuration = duration.Value;
+            await _viewModel.StartMemoryStressAsync(duration.Value);
+        };
         _memoryStressStop.Click += (_, _) => _viewModel.StopMemoryStress();
         _memoryStressStats = AddStressVisualCard(grid, 0, 1, "Memória", MemoryDeviceName(snapshot), "\uE93B", DesignTokens.Warning,
-            [("usage", "USO", "#FFB21C"), ("total", "TOTAL", "#A970FF"), ("free", "LIVRE", "#42D286")], _compactMemoryStressChart, _memoryStressState, _memoryStressStart, _memoryStressStop);
+            [("usage", "USO", "#FFB21C"), ("total", "TOTAL", "#A970FF"), ("free", "LIVRE", "#42D286")], _compactMemoryStressChart, _memoryStressState, _memoryStressTime, _memoryDurationSelector.Root, _memoryStressStart, _memoryStressStop);
 
         _storageReadStart = SecondaryButton("▷  Iniciar");
         _storageWriteStart = SecondaryButton("Escrita");
@@ -1796,10 +1887,16 @@ public sealed partial class MainWindow : Window
         _storageStressStop = SecondaryButton("□  Parar");
         _storageStressState = StatusLine("Aguardando início");
         _storageStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
-        _storageReadStart.Click += async (_, _) => await _viewModel.StartStorageReadStressAsync(TimeSpan.FromMinutes(2));
+        _storageReadStart.Click += async (_, _) =>
+        {
+            var duration = ReadCardDuration(_storageDurationSelector);
+            if (!duration.HasValue) return;
+            _storageSelectedDuration = duration.Value;
+            await _viewModel.StartStorageReadStressAsync(duration.Value);
+        };
         _storageStressStop.Click += (_, _) => _viewModel.StopStorageStress();
         _storageStressStats = AddStressVisualCard(grid, 1, 1, "Disco", StorageDeviceName(snapshot), "\uE7C3", new SolidColorBrush(Windows.UI.Color.FromArgb(255, 169, 112, 255)),
-            [("usage", "USO", "#A970FF"), ("read", "LEITURA", "#42D286"), ("write", "ESCRITA", "#FF7B43")], _compactStorageStressChart, _storageStressState, _storageReadStart, _storageStressStop);
+            [("usage", "USO", "#A970FF"), ("read", "LEITURA", "#42D286"), ("write", "ESCRITA", "#FF7B43")], _compactStorageStressChart, _storageStressState, _storageStressTime, _storageDurationSelector.Root, _storageReadStart, _storageStressStop);
 
         void LayoutStress(double width) => ArrangeResponsive(grid, width >= 960 ? 2 : 1);
         grid.SizeChanged += (_, eventArgs) => LayoutStress(eventArgs.NewSize.Width);
@@ -1810,12 +1907,14 @@ public sealed partial class MainWindow : Window
         UpdateMemoryStressUi();
         UpdateStorageStressUi();
         UpdateStressHardwareStats(snapshot);
+        UpdateStressTimers();
         UpdateCombinedStressUi();
         return Scroll(page);
     }
 
     private static IReadOnlyDictionary<string, TextBlock> AddStressVisualCard(Grid grid, int column, int row, string title, string subtitle, string glyph, Brush color,
-        IReadOnlyList<(string Key, string Label, string Color)> statDefinitions, MultiLineChart chart, TextBlock state, Button start, Button stop)
+        IReadOnlyList<(string Key, string Label, string Color)> statDefinitions, MultiLineChart chart, TextBlock state, TextBlock time,
+        StackPanel durationControl, Button start, Button stop)
     {
         var header = new Grid { ColumnSpacing = 12 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1831,6 +1930,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(labels, 1);
         header.Children.Add(labels);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        actions.Children.Add(durationControl);
         actions.Children.Add(stop);
         actions.Children.Add(start);
         Grid.SetColumn(actions, 2);
@@ -1882,6 +1982,7 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(header);
         stack.Children.Add(stats);
         stack.Children.Add(chart);
+        stack.Children.Add(time);
         stack.Children.Add(state);
         var card = Card(stack);
         Grid.SetColumn(card, column);
@@ -2009,6 +2110,43 @@ public sealed partial class MainWindow : Window
         return page;
     }
 
+    private static DurationSelector BuildCardDurationSelector() => new();
+
+    private sealed class DurationSelector
+    {
+        public StackPanel Root { get; } = new() { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+        private ComboBox Combo { get; } = new() { MinWidth = 92, Height = 32 };
+        private TextBox Custom { get; } = new() { PlaceholderText = "min", Width = 62, Height = 32, Visibility = Visibility.Collapsed };
+
+        public DurationSelector()
+        {
+            var durations = new (string Label, TimeSpan? Value)[]
+            {
+                ("30 s", TimeSpan.FromSeconds(30)), ("1 min", TimeSpan.FromMinutes(1)), ("5 min", TimeSpan.FromMinutes(5)),
+                ("10 min", TimeSpan.FromMinutes(10)), ("30 min", TimeSpan.FromMinutes(30)), ("1 hora", TimeSpan.FromHours(1)),
+                ("Ilimitado", Timeout.InfiniteTimeSpan), ("Personalizado", null)
+            };
+            foreach (var duration in durations) Combo.Items.Add(new ComboBoxItem { Content = duration.Label, Tag = duration.Value });
+            Combo.SelectedIndex = 1;
+            Combo.SelectionChanged += (_, _) => Custom.Visibility = (Combo.SelectedItem as ComboBoxItem)?.Tag is null ? Visibility.Visible : Visibility.Collapsed;
+            Root.Children.Add(Combo);
+            Root.Children.Add(Custom);
+        }
+
+        public TimeSpan? GetDuration()
+        {
+            if (Combo.SelectedItem is not ComboBoxItem selected) return null;
+            if (selected.Tag is TimeSpan duration) return duration;
+            return double.TryParse(Custom.Text, out var minutes) && minutes > 0 ? TimeSpan.FromMinutes(minutes) : null;
+        }
+
+        public void SetEnabled(bool enabled)
+        {
+            Combo.IsEnabled = enabled;
+            Custom.IsEnabled = enabled;
+        }
+    }
+
     private StackPanel BuildCombinedDurationSelector()
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
@@ -2043,6 +2181,41 @@ public sealed partial class MainWindow : Window
             ? TimeSpan.FromMinutes(minutes)
             : null;
     }
+
+    private TimeSpan? ReadCardDuration(DurationSelector? selector)
+    {
+        var duration = selector?.GetDuration();
+        if (!duration.HasValue)
+            _status.Text = "Informe uma duração personalizada válida em minutos.";
+        return duration;
+    }
+
+    private static TextBlock StressTimeText() => new()
+    {
+        Text = "00:00/01:00",
+        FontFamily = new FontFamily("Consolas"),
+        FontSize = 11,
+        Foreground = DesignTokens.Muted,
+        HorizontalAlignment = HorizontalAlignment.Right
+    };
+
+    private void UpdateStressTimers()
+    {
+        SetStressTime(_cpuStressTime, _viewModel.CpuStressMetrics?.Elapsed ?? TimeSpan.Zero, _cpuSelectedDuration);
+        SetStressTime(_gpuStressTime, _viewModel.GpuStressMetrics?.Elapsed ?? TimeSpan.Zero, _gpuSelectedDuration);
+        SetStressTime(_memoryStressTime, _viewModel.MemoryStressMetrics?.Elapsed ?? TimeSpan.Zero, _memorySelectedDuration);
+        SetStressTime(_storageStressTime, _viewModel.StorageStressMetrics?.Elapsed ?? TimeSpan.Zero, _storageSelectedDuration);
+    }
+
+    private static void SetStressTime(TextBlock? target, TimeSpan elapsed, TimeSpan selectedDuration)
+    {
+        if (target is null) return;
+        target.Text = $"{FormatStressTime(elapsed)}/{(selectedDuration == Timeout.InfiniteTimeSpan ? "--:--:--" : FormatStressTime(selectedDuration))}";
+    }
+
+    private static string FormatStressTime(TimeSpan value) => value.TotalHours >= 1
+        ? $"{(int)value.TotalHours:00}:{value.Minutes:00}:{value.Seconds:00}"
+        : $"{(int)value.TotalMinutes:00}:{value.Seconds:00}";
 
     private static (StackPanel Row, Func<TimeSpan> GetDuration) CreateDurationSelector()
     {
@@ -2186,6 +2359,7 @@ public sealed partial class MainWindow : Window
             _cpuStressStart is null || _cpuStressStop is null) return;
 
         var running = _viewModel.CpuStressStatus == StressStatus.Running;
+        var cancelling = _viewModel.CpuStressStatus == StressStatus.Cancelling;
         var metrics = _viewModel.CpuStressMetrics;
         _cpuStressState.Text = _viewModel.CpuStressStatus switch
         {
@@ -2200,6 +2374,7 @@ public sealed partial class MainWindow : Window
             : $"{metrics.Elapsed:mm\\:ss} / {metrics.Duration:mm\\:ss}  •  {metrics.ActiveWorkers} workers  •  {metrics.ProgressPercent:0.0}%";
         _cpuStressStart.IsEnabled = !running && _viewModel.CombinedStressStatus != StressStatus.Running;
         _cpuStressStop.IsEnabled = running;
+        _cpuDurationSelector?.SetEnabled(!running && !cancelling && _viewModel.CombinedStressStatus is not (StressStatus.Running or StressStatus.Cancelling));
     }
 
     private Border GpuStressCard(StressTestDefinition test)
@@ -2387,6 +2562,7 @@ public sealed partial class MainWindow : Window
               $"{metrics.AllocatedMb} MB  •  {metrics.Operations} ops  •  {metrics.Errors} erro(s)";
         _memoryStressStart.IsEnabled = !running && !cancelling && _viewModel.CombinedStressStatus != StressStatus.Running;
         _memoryStressStop.IsEnabled = running || cancelling;
+        _memoryDurationSelector?.SetEnabled(!running && !cancelling && _viewModel.CombinedStressStatus is not (StressStatus.Running or StressStatus.Cancelling));
     }
 
     private Border StorageStressCard(StressTestDefinition test)
@@ -2462,6 +2638,7 @@ public sealed partial class MainWindow : Window
         _storageWriteStart.IsEnabled = !running && !cancelling && _viewModel.CombinedStressStatus != StressStatus.Running;
         _storageReadStart.IsEnabled = !running && !cancelling && _viewModel.CombinedStressStatus != StressStatus.Running;
         _storageStressStop.IsEnabled = running || cancelling;
+        _storageDurationSelector?.SetEnabled(!running && !cancelling && _viewModel.CombinedStressStatus is not (StressStatus.Running or StressStatus.Cancelling));
     }
 
     private void UpdateCombinedStressUi()
@@ -2516,11 +2693,13 @@ public sealed partial class MainWindow : Window
               $"VRAM reservada {metrics.AllocatedVramBytes / 1024d / 1024d:0} MB  •  erros {metrics.Errors}";
         _gpuStressStart.IsEnabled = !running && !cancelling && _viewModel.IsGpuStressAvailable && _viewModel.CombinedStressStatus != StressStatus.Running;
         _gpuStressStop.IsEnabled = running || cancelling;
+        _gpuDurationSelector?.SetEnabled(!running && !cancelling && _viewModel.CombinedStressStatus is not (StressStatus.Running or StressStatus.Cancelling));
     }
 
     private UIElement Hardware()
     {
         var s = _viewModel.Snapshot;
+        _hardwareValueTexts.Clear();
         var page = Page("Hardware", "Componentes detectados na máquina local e seus parâmetros atuais.", "INVENTÁRIO");
         var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
         for (var column = 0; column < 3; column++)
@@ -2550,18 +2729,18 @@ public sealed partial class MainWindow : Window
             ("Temperatura", Temp(s.MemoryTemperature))
         };
 
-        var motherboard = s.Devices.FirstOrDefault(device => device.Type.Contains("Mother", StringComparison.OrdinalIgnoreCase) || device.Type.Contains("Mainboard", StringComparison.OrdinalIgnoreCase));
+        var motherboard = MotherboardDevice(s);
         var storageDevice = s.Devices.FirstOrDefault(device => device.Type.Contains("Storage", StringComparison.OrdinalIgnoreCase));
         var boardRows = DeviceRows(motherboard);
         var storageRows = DeviceRows(storageDevice);
         var coolingRows = s.Fans.Take(4).Select(fan => (fan.Name, $"{fan.Rpm:F0} RPM")).ToArray();
 
-        AddInventoryCard(grid, 0, 0, "PROCESSADOR", s.Cpu.Name, "\uE950", cpuRows);
-        AddInventoryCard(grid, 1, 0, "PLACA DE VÍDEO", s.Gpu.Name, "\uE7F4", gpuRows);
-        AddInventoryCard(grid, 2, 0, "MEMÓRIA", "Memória RAM", "\uE93B", memoryRows);
-        AddInventoryCard(grid, 0, 1, "PLACA-MÃE", motherboard?.Name ?? "Não identificada", "\uE950", boardRows);
-        AddInventoryCard(grid, 1, 1, "ARMAZENAMENTO", storageDevice?.Name ?? "Unidade do sistema", "\uE7C3", storageRows);
-        AddInventoryCard(grid, 2, 1, "TÉRMICO", "Refrigeração", "\uE9CA", coolingRows);
+        AddInventoryCard(grid, 0, 0, "PROCESSADOR", s.Cpu.Name, "\uE950", cpuRows, _hardwareValueTexts, "cpu");
+        AddInventoryCard(grid, 1, 0, "PLACA DE VÍDEO", s.Gpu.Name, "\uE7F4", gpuRows, _hardwareValueTexts, "gpu");
+        AddInventoryCard(grid, 2, 0, "MEMÓRIA", "Memória RAM", "\uE93B", memoryRows, _hardwareValueTexts, "memory");
+        AddInventoryCard(grid, 0, 1, "PLACA-MÃE", motherboard?.Name ?? "Não identificada", "\uE950", boardRows, _hardwareValueTexts, "board");
+        AddInventoryCard(grid, 1, 1, "ARMAZENAMENTO", storageDevice?.Name ?? "Unidade do sistema", "\uE7C3", storageRows, _hardwareValueTexts, "storage");
+        AddInventoryCard(grid, 2, 1, "TÉRMICO", "Refrigeração", "\uE9CA", coolingRows, _hardwareValueTexts, "cooling");
         void LayoutHardware(double width) => ArrangeResponsive(grid, width >= 960 ? 3 : width >= 448 ? 2 : 1);
         grid.SizeChanged += (_, eventArgs) => LayoutHardware(eventArgs.NewSize.Width);
         LayoutHardware(1200);
@@ -2569,13 +2748,79 @@ public sealed partial class MainWindow : Window
         return Scroll(page);
     }
 
+    private void UpdateHardware()
+    {
+        var snapshot = _viewModel.Snapshot;
+        var memoryRows = new[]
+        {
+            ("Capacidade", $"{snapshot.MemoryTotalGb:F1} GB"),
+            ("Em uso", $"{snapshot.MemoryUsedGb:F1} GB"),
+            ("Disponível", $"{Math.Max(0, snapshot.MemoryTotalGb - snapshot.MemoryUsedGb):F1} GB"),
+            ("Temperatura", Temp(snapshot.MemoryTemperature))
+        };
+        UpdateInventoryValues("cpu", new[]
+        {
+            ("Núcleos / Threads", $"{Math.Max(1, Environment.ProcessorCount / 2)} / {Environment.ProcessorCount}"),
+            ("Clock atual", snapshot.Cpu.Clock.HasValue ? $"{snapshot.Cpu.Clock:F0} MHz" : "—"),
+            ("Temperatura", Temp(snapshot.Cpu.Temperature)),
+            ("Potência", snapshot.Cpu.Power.HasValue ? $"{snapshot.Cpu.Power:F0} W" : "—")
+        });
+        UpdateInventoryValues("gpu", new[]
+        {
+            ("Uso", Pct(snapshot.Gpu.Usage)),
+            ("Clock", snapshot.Gpu.Clock.HasValue ? $"{snapshot.Gpu.Clock:F0} MHz" : "—"),
+            ("Temperatura", Temp(snapshot.Gpu.Temperature)),
+            ("Potência", snapshot.Gpu.Power.HasValue ? $"{snapshot.Gpu.Power:F0} W" : "—")
+        });
+        UpdateInventoryValues("memory", memoryRows);
+        UpdateInventoryValues("board", DeviceRows(MotherboardDevice(snapshot)));
+        UpdateInventoryValues("storage", DeviceRows(snapshot.Devices.FirstOrDefault(device => device.Type.Contains("Storage", StringComparison.OrdinalIgnoreCase))));
+        UpdateInventoryValues("cooling", snapshot.Fans.Take(4).Select(fan => (fan.Name, $"{fan.Rpm:F0} RPM")));
+    }
+
+    private void UpdateInventoryValues(string prefix, IEnumerable<(string Label, string Value)> rows)
+    {
+        foreach (var (label, value) in rows)
+            if (_hardwareValueTexts.TryGetValue($"{prefix}:{label}", out var text)) text.Text = value;
+    }
+
+    private static HardwareDeviceSnapshot? MotherboardDevice(HardwareSnapshot snapshot)
+    {
+        var board = snapshot.Devices.FirstOrDefault(device =>
+            device.Type.Contains("Mother", StringComparison.OrdinalIgnoreCase) ||
+            device.Type.Contains("Mainboard", StringComparison.OrdinalIgnoreCase));
+        var controllers = snapshot.Devices.Where(device =>
+            device.Type.Equals("SuperIO", StringComparison.OrdinalIgnoreCase) ||
+            device.Type.Equals("EmbeddedController", StringComparison.OrdinalIgnoreCase));
+        if (board is not null)
+            controllers = controllers.Where(device => string.Equals(device.ParentName, board.Name, StringComparison.OrdinalIgnoreCase));
+
+        var sources = board is null ? controllers : new[] { board }.Concat(controllers);
+        var sensors = sources.SelectMany(device => device.Sensors)
+            .GroupBy(sensor => sensor.Identifier, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        var identity = board ?? controllers.FirstOrDefault();
+        return identity is null ? null : identity with { Sensors = sensors };
+    }
+
+    private static int BoardSensorOrder(string type) => type switch
+    {
+        "Temperature" => 0,
+        "Fan" => 1,
+        "Voltage" => 2,
+        _ => 3
+    };
+
     private static (string, string)[] DeviceRows(HardwareDeviceSnapshot? device) => device?.Sensors
         .Where(sensor => sensor.Value.HasValue)
+        .OrderBy(sensor => BoardSensorOrder(sensor.Type))
         .Take(4)
         .Select(sensor => (sensor.Name, FormatSensorValue(sensor.Value, sensor.Unit)))
         .ToArray() ?? [("Status", "Não disponível")];
 
-    private static void AddInventoryCard(Grid grid, int column, int row, string title, string name, string glyph, IEnumerable<(string Label, string Value)> values)
+    private static void AddInventoryCard(Grid grid, int column, int row, string title, string name, string glyph,
+        IEnumerable<(string Label, string Value)> values, IDictionary<string, TextBlock> valueTexts, string keyPrefix)
     {
         var titleGrid = new Grid { ColumnSpacing = 12 };
         titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -2604,6 +2849,7 @@ public sealed partial class MainWindow : Window
             line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             line.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = DesignTokens.Muted, TextTrimming = TextTrimming.CharacterEllipsis });
             var valueText = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), FontSize = 12, Foreground = DesignTokens.Text };
+            valueTexts[$"{keyPrefix}:{label}"] = valueText;
             Grid.SetColumn(valueText, 1);
             line.Children.Add(valueText);
             stack.Children.Add(line);

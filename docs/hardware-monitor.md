@@ -19,6 +19,10 @@ Wrapper em `EME.Diagnostics.Hardware.LibreHardwareMonitorService` que implementa
 - Detecta CPU via `DetectCpu(cpu.Name)` — resolve vendor via DB ou JSON config ou hardcoded
 - Monta `HardwareSnapshot` imutável com CPU, GPU, RAM, Storage, Fans, dispositivos brutos
 
+Na página Hardware, o card da placa-mãe combina a identidade do dispositivo `Motherboard` com os sensores de seus controladores filhos `SuperIO` e `EmbeddedController` (por exemplo, Nuvoton e ITE). Isso é necessário porque o dispositivo principal normalmente não expõe leituras diretamente. Temperaturas e ventoinhas têm prioridade visual, seguidas das tensões disponíveis.
+
+Os valores dos seis cards de inventário são atualizados a cada novo `HardwareSnapshot`, sem reconstruir a página ou perder a posição de rolagem.
+
 ### Sensor Mapping
 
 O `CpuSensorMappingResolver` resolve nomes de sensores com fallback em cascata:

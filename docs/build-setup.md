@@ -24,6 +24,7 @@ xcopy /y src\...\bin\x64\Release\net8.0-...\win-x64\* release\
 
 Flags do instalador:
 - `PrivilegesRequired=admin` — requer admin
+- O executável contém `requestedExecutionLevel=requireAdministrator` e o instalador registra `RUNASADMIN` em `AppCompatFlags\Layers`, garantindo elevação pelos atalhos do Menu Iniciar e da Área de Trabalho. A entrada é removida na desinstalação.
 - `SolidCompression=yes` — compressão LZMA2/ultra64
 - Instala PawnIO_setup.exe automaticamente ao final (`CurStepChanged(ssPostInstall)`)
 - Cria diretório em `{commonappdata}\EME\HardwareDatabase` com permissão `users-modify`

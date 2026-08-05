@@ -5,12 +5,12 @@
 
 [Setup]
 AppName=EME Diagnostics
-AppVersion=1.4.0.0
+AppVersion=1.5.0.0
 AppPublisher=E.M.E
 DefaultDirName={autopf}\EMEDiagnostics
 DefaultGroupName=EME Diagnostics
 OutputDir=installer
-OutputBaseFilename=EMEDiagnostics_v1.4.0.0_Setup
+OutputBaseFilename=EMEDiagnostics_v1.5.0.0_Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 SetupIconFile=docs\logo.ico
@@ -48,6 +48,10 @@ Source: "{#ReleaseDir}\tools\PawnIO_setup.exe"; DestDir: "{app}\tools"; Flags: i
 Name: "{group}\EME Diagnostics"; Filename: "{app}\EME.Diagnostics.App.exe"; Comment: "Abrir E.M.E Diagnostics"
 Name: "{group}\Desinstalar EME Diagnostics"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\EME Diagnostics"; Filename: "{app}\EME.Diagnostics.App.exe"; Tasks: desktopicon
+
+[Registry]
+; Reforça a elevação para todos os atalhos, mesmo se o Windows ignorar o manifesto embutido.
+Root: HKLM; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"; ValueType: string; ValueName: "{app}\EME.Diagnostics.App.exe"; ValueData: "RUNASADMIN"; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\EME.Diagnostics.App.exe"; Description: "Abrir E.M.E Diagnostics agora"; Flags: nowait postinstall skipifsilent

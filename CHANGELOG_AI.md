@@ -1,5 +1,14 @@
 # Relatório de desenvolvimento
 
+## 2026-08-05 — v1.5.0 — relatórios, temporizadores e hardware em tempo real
+
+- Instalador reforçado para sempre iniciar o aplicativo como administrador: além do manifesto `requireAdministrator`, registra `RUNASADMIN` para o executável instalado e remove a regra na desinstalação.
+- Hardware agora atualiza continuamente os valores dos cards; a placa-mãe agrega leituras dos controladores filhos Super I/O/Embedded Controller, incluindo Nuvoton e ITE.
+- O botão PDF de Relatórios agora reutiliza e abre o arquivo já salvo, gerando um novo documento somente quando ainda não existe PDF para aquele relatório.
+- Legenda do gráfico da GPU mantida em uma única linha; cada card de stress ganhou duração independente e cronômetro decorrido/limite, inclusive para execução ilimitada.
+- Ícone de exclusão limitado a 14×14 px e PDF configurado para abrir automaticamente após a exportação.
+- Relatórios agora exibe o pico térmico real salvo e oferece exclusão com confirmação por linha.
+
 ## 2026-08-05 — v1.4.0 — telemetria avançada e Stress Test
 
 - Corrigida a atualização visual do botão combinado para `Parar todos` e adicionada a duração `Ilimitado`.
