@@ -5,12 +5,12 @@
 
 [Setup]
 AppName=EME Diagnostics
-AppVersion=1.3.0.0
+AppVersion=1.4.0.0
 AppPublisher=E.M.E
 DefaultDirName={autopf}\EMEDiagnostics
 DefaultGroupName=EME Diagnostics
 OutputDir=installer
-OutputBaseFilename=EMEDiagnostics_v1.3.0.0_Setup
+OutputBaseFilename=EMEDiagnostics_v1.4.0.0_Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 SetupIconFile=docs\logo.ico

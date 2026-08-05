@@ -31,6 +31,9 @@ public sealed record HardwareSnapshot(
     double? StorageLoad,
     double? StorageReadMBs,
     double? StorageWriteMBs,
+    double StorageUsedGb,
+    double StorageFreeGb,
+    double StorageTotalGb,
     IReadOnlyList<FanMetric> Fans,
     IReadOnlyList<HardwareDeviceSnapshot> Devices)
 {
@@ -45,6 +48,9 @@ public sealed record HardwareSnapshot(
         null,
         null,
         null,
+        0,
+        0,
+        0,
         Array.Empty<FanMetric>(),
         Array.Empty<HardwareDeviceSnapshot>());
 }

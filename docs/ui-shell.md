@@ -37,10 +37,18 @@ O rodapé da sidebar permanece fixado na base e exibe a versão Windows com quat
 ## Páginas
 
 ### Dashboard
-Abre com quatro cartões compactos de telemetria (CPU, GPU, memória e maior temperatura atual), dois gráficos de área para CPU/GPU e uma faixa inferior com temperatura consolidada e armazenamento. CPU usa verde, GPU usa azul e temperatura usa âmbar.
+Abre com quatro cartões compactos de telemetria (CPU, GPU, memória e disco SSD) e três gráficos multissérie. O gráfico da CPU apresenta uso, CPU/CCD e PKG; o gráfico da GPU apresenta uso e temperatura; o gráfico do disco apresenta temperatura, leitura e escrita. Cada série possui cor, legenda, valor atual e preenchimento em gradiente sob a linha. O card inferior de armazenamento apresenta a capacidade real da unidade do sistema, dividida em espaço usado, livre e total.
+
+Nos cartões de CPU e GPU, a linha principal distribui o percentual de uso à esquerda e as temperaturas em tipografia menor à direita. Em CPUs AMD com sensores equivalentes, `CPU` usa a leitura do CCD/Tdie e `PKG` usa Package ou Tctl/Tdie; em outros modelos são usados Core Average/Core e Package com fallback seguro. A GPU exibe sua temperatura principal. Sensores indisponíveis são representados por `—`.
+
+Somente os valores térmicos recebem cor por faixa: verde abaixo de 60 °C, âmbar entre 60 °C e 79 °C e vermelho a partir de 80 °C.
 
 ### Stress Test
-Grade 2x2 de cartões para CPU, GPU, memória e disco. Cada cartão apresenta identificação, ações iniciar/parar, métricas Atual/Média/Pico, gráfico de área e estado de execução. A ação global “Executar todos” aciona o teste combinado.
+Grade 2x2 de cartões para CPU, GPU, memória e disco. Cada cartão apresenta identificação, ações iniciar/parar, métricas reais específicas do componente, gráfico multissérie e estado de execução. CPU mostra uso/CPU/PKG; GPU mostra uso/temperatura e agrupa VRAM total, usada e livre em um único bloco compacto; memória mostra usada/total/livre; disco mostra uso/leitura/escrita. Os textos dos blocos usam as cores das respectivas linhas, enquanto a legenda do gráfico evita repetir os valores. A ação global “Executar todos” aciona o teste combinado.
+
+O cabeçalho do Stress Test inclui duração global (30 s, 1 min, 5 min, 10 min, 30 min, 1 h, ilimitado ou minutos personalizados). Durante o teste combinado, o mesmo botão muda para `Parar todos` e o seletor de duração é bloqueado.
+
+O subtítulo de cada cartão identifica o hardware real detectado, e não ferramentas de benchmark de referência: modelo da CPU, modelo da GPU, módulo de memória físico e unidade de armazenamento.
 
 ### Hardware
 Grade 3x2 de inventário: Processador, Placa de vídeo, Memória, Placa-mãe, Armazenamento e Térmico. Cada cartão apresenta pares chave/valor provenientes da telemetria real disponível.

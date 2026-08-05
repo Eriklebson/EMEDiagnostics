@@ -23,15 +23,28 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, Button> _navButtons = [];
     private TextBlock? _dashboardCpuValue;
     private TextBlock? _dashboardGpuValue;
+    private TextBlock? _dashboardCpuTemperatureValue;
+    private TextBlock? _dashboardCpuPackageTemperatureValue;
+    private TextBlock? _dashboardGpuTemperatureValue;
     private TextBlock? _dashboardMemoryValue;
-    private TextBlock? _dashboardTemperatureValue;
-    private CompactAreaChart? _dashboardCpuChart;
-    private CompactAreaChart? _dashboardGpuChart;
-    private CompactAreaChart? _dashboardTemperatureChart;
-    private CompactAreaChart? _compactCpuStressChart;
-    private CompactAreaChart? _compactGpuStressChart;
-    private CompactAreaChart? _compactMemoryStressChart;
-    private CompactAreaChart? _compactStorageStressChart;
+    private TextBlock? _dashboardStorageValue;
+    private TextBlock? _dashboardStorageDetail;
+    private TextBlock? _dashboardStorageUsedCapacity;
+    private TextBlock? _dashboardStorageFreeCapacity;
+    private TextBlock? _dashboardStorageTotalCapacity;
+    private ColumnDefinition? _dashboardStorageUsedBar;
+    private ColumnDefinition? _dashboardStorageFreeBar;
+    private MultiLineChart? _dashboardCpuChart;
+    private MultiLineChart? _dashboardGpuChart;
+    private MultiLineChart? _dashboardStorageChart;
+    private MultiLineChart? _compactCpuStressChart;
+    private MultiLineChart? _compactGpuStressChart;
+    private MultiLineChart? _compactMemoryStressChart;
+    private MultiLineChart? _compactStorageStressChart;
+    private IReadOnlyDictionary<string, TextBlock> _cpuStressStats = new Dictionary<string, TextBlock>();
+    private IReadOnlyDictionary<string, TextBlock> _gpuStressStats = new Dictionary<string, TextBlock>();
+    private IReadOnlyDictionary<string, TextBlock> _memoryStressStats = new Dictionary<string, TextBlock>();
+    private IReadOnlyDictionary<string, TextBlock> _storageStressStats = new Dictionary<string, TextBlock>();
     private string _dashboardStructureSignature = string.Empty;
     private TextBlock? _cpuStressState;
     private TextBlock? _cpuStressMetrics;
@@ -61,6 +74,9 @@ public sealed partial class MainWindow : Window
     private TextBlock? _combinedStressState;
     private Button? _combinedStressStart;
     private Button? _combinedStressStop;
+    private ComboBox? _combinedDurationCombo;
+    private TextBox? _combinedCustomMinutes;
+    private StackPanel? _combinedDurationControl;
     private DateTimeOffset _lastCpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastGpuChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastMemoryChartSample = DateTimeOffset.MinValue;
@@ -158,11 +174,8 @@ public sealed partial class MainWindow : Window
         _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
         _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
         _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
-        _compactCpuStressChart?.AddSample(_viewModel.Snapshot.Cpu.Usage);
-        _compactGpuStressChart?.AddSample(_viewModel.Snapshot.Gpu.Usage);
-        var memoryPercent = _viewModel.Snapshot.MemoryTotalGb > 0 ? _viewModel.Snapshot.MemoryUsedGb / _viewModel.Snapshot.MemoryTotalGb * 100 : 0;
-        _compactMemoryStressChart?.AddSample(memoryPercent);
-        _compactStorageStressChart?.AddSample(_viewModel.Snapshot.StorageLoad);
+        AddStressChartSamples(_viewModel.Snapshot);
+        UpdateStressHardwareStats(_viewModel.Snapshot);
     }
 
     private void ChartTimerLoopAsync(CancellationToken ct)
@@ -279,12 +292,20 @@ public sealed partial class MainWindow : Window
         var page = Page("Dashboard", "Telemetria consolidada da estação de trabalho. Atualização a cada 1,2s.", "SISTEMA  ·  ONLINE", true);
 
         var metrics = new Grid { ColumnSpacing = 16, Margin = new Thickness(0, 0, 0, 0) };
-        _dashboardCpuValue = DashboardMetricCard(metrics, 0, "CPU", s.Cpu.Name, Pct(s.Cpu.Usage), "\uE950", DesignTokens.Accent, $"{Environment.ProcessorCount / 2}C/{Environment.ProcessorCount}T");
-        _dashboardGpuValue = DashboardMetricCard(metrics, 1, "GPU", s.Gpu.Name, Pct(s.Gpu.Usage), "\uE7F4", DesignTokens.Info, "Carga gráfica atual");
+        var cpuMetric = DashboardMetricCard(metrics, 0, "CPU", s.Cpu.Name, Pct(s.Cpu.Usage), "\uE950", DesignTokens.Accent, $"{Environment.ProcessorCount / 2}C/{Environment.ProcessorCount}T",
+            [new("CPU", CpuDisplayTemperature(s)), new("PKG", CpuPackageTemperature(s))]);
+        _dashboardCpuValue = cpuMetric.Value;
+        _dashboardCpuTemperatureValue = cpuMetric.TemperatureValues.ElementAtOrDefault(0);
+        _dashboardCpuPackageTemperatureValue = cpuMetric.TemperatureValues.ElementAtOrDefault(1);
+        var gpuMetric = DashboardMetricCard(metrics, 1, "GPU", s.Gpu.Name, Pct(s.Gpu.Usage), "\uE7F4", DesignTokens.Info, "Carga gráfica atual",
+            [new("GPU", s.Gpu.Temperature)]);
+        _dashboardGpuValue = gpuMetric.Value;
+        _dashboardGpuTemperatureValue = gpuMetric.TemperatureValues.ElementAtOrDefault(0);
         var memoryPercent = s.MemoryTotalGb > 0 ? s.MemoryUsedGb / s.MemoryTotalGb * 100 : 0;
-        _dashboardMemoryValue = DashboardMetricCard(metrics, 2, "MEMÓRIA", $"/ {s.MemoryTotalGb:F0} GB", $"{s.MemoryUsedGb:F1}", "\uE93B", DesignTokens.Text, $"{memoryPercent:F0}% em uso");
-        var temperature = CurrentPeakTemperature(s);
-        _dashboardTemperatureValue = DashboardMetricCard(metrics, 3, "TEMPERATURA", "Maior sensor atual", temperature.HasValue ? $"{temperature:F0} °C" : "—", "\uE7E8", DesignTokens.Warning, "Leitura consolidada");
+        _dashboardMemoryValue = DashboardMetricCard(metrics, 2, "MEMÓRIA", $"/ {s.MemoryTotalGb:F0} GB", $"{s.MemoryUsedGb:F1}", "\uE93B", DesignTokens.Text, $"{memoryPercent:F0}% em uso").Value;
+        var storageMetric = DashboardMetricCard(metrics, 3, "DISCO (SSD)", StorageDeviceName(s), Temp(s.StorageTemperature), "\uE7C3", TemperatureBrush(s.StorageTemperature), StorageTransferSummary(s));
+        _dashboardStorageValue = storageMetric.Value;
+        _dashboardStorageDetail = storageMetric.Detail;
         void LayoutMetrics(double width)
         {
             var columns = width >= 960 ? 4 : width >= 320 ? 2 : 1;
@@ -294,9 +315,17 @@ public sealed partial class MainWindow : Window
         LayoutMetrics(1200);
         page.Children.Add(metrics);
 
-        _dashboardCpuChart = new CompactAreaChart("Uso de CPU", "#42D286");
-        _dashboardGpuChart = new CompactAreaChart("Uso de GPU", "#43A8E5");
-        _dashboardTemperatureChart = new CompactAreaChart("Temperatura dos sensores", "#FFB21C");
+        _dashboardCpuChart = new MultiLineChart("CPU", [
+            new("usage", "Uso", "#42D286", "%"),
+            new("cpuTemp", "CPU", "#FFB21C", " °C"),
+            new("packageTemp", "PKG", "#FF5C6C", " °C")]);
+        _dashboardGpuChart = new MultiLineChart("GPU", [
+            new("usage", "Uso", "#43A8E5", "%"),
+            new("temperature", "Temperatura", "#FFB21C", " °C")]);
+        _dashboardStorageChart = new MultiLineChart("Disco (SSD)", [
+            new("temperature", "Temperatura", "#FFB21C", " °C"),
+            new("read", "Leitura", "#42D286", " MB/s", null),
+            new("write", "Escrita", "#A970FF", " MB/s", null)]);
         SeedDashboardCharts(s);
 
         var topCharts = new Grid { ColumnSpacing = 16 };
@@ -310,7 +339,7 @@ public sealed partial class MainWindow : Window
         page.Children.Add(topCharts);
 
         var bottom = new Grid { ColumnSpacing = 16 };
-        bottom.Children.Add(Card(_dashboardTemperatureChart));
+        bottom.Children.Add(Card(_dashboardStorageChart));
         var storage = Card(BuildStorageSummary(s));
         Grid.SetColumn(storage, 1);
         bottom.Children.Add(storage);
@@ -346,7 +375,9 @@ public sealed partial class MainWindow : Window
         return Scroll(page);
     }
 
-    private static TextBlock DashboardMetricCard(Grid grid, int column, string title, string name, string value, string glyph, Brush valueColor, string detail)
+    private readonly record struct DashboardTemperature(string Label, double? Value);
+
+    private static (TextBlock Value, IReadOnlyList<TextBlock> TemperatureValues, TextBlock Detail) DashboardMetricCard(Grid grid, int column, string title, string name, string value, string glyph, Brush valueColor, string detail, IReadOnlyList<DashboardTemperature>? temperatures = null)
     {
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -358,53 +389,188 @@ public sealed partial class MainWindow : Window
         icon.Foreground = DesignTokens.Muted;
         Grid.SetColumn(icon, 1);
         header.Children.Add(icon);
-        var valueText = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), FontSize = 31, FontWeight = FontWeights.Bold, Foreground = valueColor };
+        var valueRow = new Grid();
+        valueRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        valueRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var valueText = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), FontSize = 31, FontWeight = FontWeights.Bold, Foreground = valueColor, VerticalAlignment = VerticalAlignment.Center };
+        valueRow.Children.Add(valueText);
+        var temperatureValues = new List<TextBlock>();
+        if (temperatures is { Count: > 0 })
+        {
+            var temperatureStrip = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 5,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12, 0, 0, 0)
+            };
+            for (var index = 0; index < temperatures.Count; index++)
+            {
+                var temperature = temperatures[index];
+                if (index > 0)
+                    temperatureStrip.Children.Add(new TextBlock { Text = "|", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Border });
+                temperatureStrip.Children.Add(new TextBlock { Text = temperature.Label, FontFamily = new FontFamily("Consolas"), FontSize = 10, Foreground = DesignTokens.Muted, VerticalAlignment = VerticalAlignment.Center });
+                var temperatureText = new TextBlock { FontFamily = new FontFamily("Consolas"), FontSize = 12, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center };
+                SetTemperatureText(temperatureText, temperature.Value);
+                temperatureValues.Add(temperatureText);
+                temperatureStrip.Children.Add(temperatureText);
+            }
+            Grid.SetColumn(temperatureStrip, 1);
+            valueRow.Children.Add(temperatureStrip);
+        }
         var stack = new StackPanel { Spacing = 8 };
         stack.Children.Add(header);
-        stack.Children.Add(valueText);
+        stack.Children.Add(valueRow);
         stack.Children.Add(new TextBlock { Text = name, FontSize = 11, Foreground = DesignTokens.Muted, TextTrimming = TextTrimming.CharacterEllipsis });
-        stack.Children.Add(new TextBlock { Text = detail, FontSize = 10, Foreground = DesignTokens.Muted });
+        var detailText = new TextBlock { Text = detail, FontSize = 10, Foreground = DesignTokens.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
+        stack.Children.Add(detailText);
         var card = Card(stack);
         card.MinHeight = 130;
         Grid.SetColumn(card, column);
         grid.Children.Add(card);
-        return valueText;
+        return (valueText, temperatureValues, detailText);
     }
 
-    private static StackPanel BuildStorageSummary(HardwareSnapshot snapshot)
+    private StackPanel BuildStorageSummary(HardwareSnapshot snapshot)
     {
-        var stack = new StackPanel { Spacing = 16 };
+        var stack = new StackPanel { Spacing = 14 };
         stack.Children.Add(new TextBlock { Text = "ARMAZENAMENTO", FontFamily = new FontFamily("Consolas"), FontSize = 10, CharacterSpacing = 160, Foreground = DesignTokens.Muted });
-        var load = Math.Clamp(snapshot.StorageLoad ?? 0, 0, 100);
-        stack.Children.Add(new TextBlock { Text = "Unidade do sistema", FontSize = 13, Foreground = DesignTokens.Text });
+        stack.Children.Add(new TextBlock { Text = StorageDeviceName(snapshot), FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, TextTrimming = TextTrimming.CharacterEllipsis });
         var barTrack = new Grid { Height = 5, Background = DesignTokens.Inset };
-        barTrack.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(load, 0.1), GridUnitType.Star) });
-        barTrack.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(100 - load, 0.1), GridUnitType.Star) });
+        _dashboardStorageUsedBar = new ColumnDefinition();
+        _dashboardStorageFreeBar = new ColumnDefinition();
+        barTrack.ColumnDefinitions.Add(_dashboardStorageUsedBar);
+        barTrack.ColumnDefinitions.Add(_dashboardStorageFreeBar);
         barTrack.Children.Add(new Border
         {
-            Background = load > 85 ? DesignTokens.Danger : load > 70 ? DesignTokens.Warning : DesignTokens.Accent,
-            CornerRadius = new CornerRadius(999)
+            Background = DesignTokens.Accent,
+            CornerRadius = new CornerRadius(2)
         });
         stack.Children.Add(barTrack);
-        stack.Children.Add(new TextBlock { Text = $"{load:F0}% em uso", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Muted });
-        stack.Children.Add(new Border
-        {
-            Background = DesignTokens.Inset,
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12),
-            Child = new TextBlock { Text = "⚡  Nenhum stress test em execução.", FontSize = 11, Foreground = DesignTokens.Muted }
-        });
+
+        var capacities = new Grid { ColumnSpacing = 12 };
+        for (var index = 0; index < 3; index++) capacities.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _dashboardStorageUsedCapacity = AddStorageCapacity(capacities, 0, "USADO");
+        _dashboardStorageFreeCapacity = AddStorageCapacity(capacities, 1, "LIVRE");
+        _dashboardStorageTotalCapacity = AddStorageCapacity(capacities, 2, "TOTAL");
+        stack.Children.Add(capacities);
+        UpdateStorageSummary(snapshot);
         return stack;
+    }
+
+    private static TextBlock AddStorageCapacity(Grid grid, int column, string label)
+    {
+        var value = new TextBlock { FontFamily = new FontFamily("Consolas"), FontSize = 15, FontWeight = FontWeights.Bold, Foreground = DesignTokens.Text };
+        var panel = new StackPanel { Spacing = 3, Children =
+        {
+            new TextBlock { Text = label, FontFamily = new FontFamily("Consolas"), FontSize = 9, CharacterSpacing = 100, Foreground = DesignTokens.Muted },
+            value
+        }};
+        Grid.SetColumn(panel, column);
+        grid.Children.Add(panel);
+        return value;
+    }
+
+    private void UpdateStorageSummary(HardwareSnapshot snapshot)
+    {
+        var total = Math.Max(0, snapshot.StorageTotalGb);
+        var used = Math.Clamp(snapshot.StorageUsedGb, 0, total);
+        var free = Math.Clamp(snapshot.StorageFreeGb, 0, total);
+        _dashboardStorageUsedCapacity?.SetValue(TextBlock.TextProperty, Capacity(used));
+        _dashboardStorageFreeCapacity?.SetValue(TextBlock.TextProperty, Capacity(free));
+        _dashboardStorageTotalCapacity?.SetValue(TextBlock.TextProperty, Capacity(total));
+        if (_dashboardStorageUsedBar != null) _dashboardStorageUsedBar.Width = new GridLength(Math.Max(used, 0.1), GridUnitType.Star);
+        if (_dashboardStorageFreeBar != null) _dashboardStorageFreeBar.Width = new GridLength(Math.Max(free, 0.1), GridUnitType.Star);
     }
 
     private void SeedDashboardCharts(HardwareSnapshot snapshot)
     {
         for (var index = 0; index < 24; index++)
         {
-            _dashboardCpuChart?.AddSample(snapshot.Cpu.Usage);
-            _dashboardGpuChart?.AddSample(snapshot.Gpu.Usage);
-            _dashboardTemperatureChart?.AddSample(CurrentPeakTemperature(snapshot));
+            AddDashboardChartSamples(snapshot);
         }
+    }
+
+    private void AddDashboardChartSamples(HardwareSnapshot snapshot)
+    {
+        _dashboardCpuChart?.AddSamples(
+            ("usage", snapshot.Cpu.Usage),
+            ("cpuTemp", CpuDisplayTemperature(snapshot)),
+            ("packageTemp", CpuPackageTemperature(snapshot)));
+        _dashboardGpuChart?.AddSamples(
+            ("usage", snapshot.Gpu.Usage),
+            ("temperature", snapshot.Gpu.Temperature));
+        _dashboardStorageChart?.AddSamples(
+            ("temperature", snapshot.StorageTemperature),
+            ("read", snapshot.StorageReadMBs),
+            ("write", snapshot.StorageWriteMBs));
+    }
+
+    private void AddStressChartSamples(HardwareSnapshot snapshot)
+    {
+        var vram = GpuVram(snapshot);
+        _compactCpuStressChart?.AddSamples(("usage", snapshot.Cpu.Usage), ("cpuTemp", CpuDisplayTemperature(snapshot)), ("pkgTemp", CpuPackageTemperature(snapshot)));
+        _compactGpuStressChart?.AddSamples(("usage", snapshot.Gpu.Usage), ("temperature", snapshot.Gpu.Temperature), ("vramTotal", vram.Total), ("vramUsed", vram.Used), ("vramFree", vram.Free));
+        _compactMemoryStressChart?.AddSamples(("usage", snapshot.MemoryUsedGb), ("total", snapshot.MemoryTotalGb), ("free", Math.Max(0, snapshot.MemoryTotalGb - snapshot.MemoryUsedGb)));
+        _compactStorageStressChart?.AddSamples(("usage", snapshot.StorageLoad), ("read", snapshot.StorageReadMBs), ("write", snapshot.StorageWriteMBs));
+    }
+
+    private void UpdateStressHardwareStats(HardwareSnapshot snapshot)
+    {
+        var vram = GpuVram(snapshot);
+        SetStat(_cpuStressStats, "usage", Pct(snapshot.Cpu.Usage));
+        SetStat(_cpuStressStats, "cpuTemp", Temp(CpuDisplayTemperature(snapshot)));
+        SetStat(_cpuStressStats, "pkgTemp", Temp(CpuPackageTemperature(snapshot)));
+        SetStat(_gpuStressStats, "usage", Pct(snapshot.Gpu.Usage));
+        SetStat(_gpuStressStats, "temperature", Temp(snapshot.Gpu.Temperature));
+        SetStat(_gpuStressStats, "vramTotal", VramText(vram.Total));
+        SetStat(_gpuStressStats, "vramUsed", VramText(vram.Used));
+        SetStat(_gpuStressStats, "vramFree", VramText(vram.Free));
+        SetStat(_memoryStressStats, "usage", $"{snapshot.MemoryUsedGb:F1} GB");
+        SetStat(_memoryStressStats, "total", $"{snapshot.MemoryTotalGb:F1} GB");
+        SetStat(_memoryStressStats, "free", $"{Math.Max(0, snapshot.MemoryTotalGb - snapshot.MemoryUsedGb):F1} GB");
+        SetStat(_storageStressStats, "usage", Pct(snapshot.StorageLoad));
+        SetStat(_storageStressStats, "read", TransferRate(snapshot.StorageReadMBs));
+        SetStat(_storageStressStats, "write", TransferRate(snapshot.StorageWriteMBs));
+    }
+
+    private static void SetStat(IReadOnlyDictionary<string, TextBlock> stats, string key, string value)
+    {
+        if (stats.TryGetValue(key, out var text)) text.Text = value;
+    }
+
+    private readonly record struct VramValues(double? Total, double? Used, double? Free);
+
+    private static VramValues GpuVram(HardwareSnapshot snapshot)
+    {
+        var sensors = snapshot.Devices
+            .Where(device => device.Type.StartsWith("Gpu", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(device => device.Sensors)
+            .Where(sensor => sensor.Value.HasValue && sensor.Name.Contains("Memory", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        double? Read(params string[] terms)
+        {
+            var sensor = sensors.FirstOrDefault(candidate => terms.All(term => candidate.Name.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            if (sensor?.Value is not double value) return null;
+            return sensor.Unit.Equals("MB", StringComparison.OrdinalIgnoreCase) ? value / 1024d : value;
+        }
+        var total = Read("Memory", "Total");
+        var used = Read("Memory", "Used") ?? Read("Memory", "Use");
+        var free = Read("Memory", "Free");
+        total ??= used.HasValue && free.HasValue ? used + free : null;
+        free ??= total.HasValue && used.HasValue ? Math.Max(0, total.Value - used.Value) : null;
+        used ??= total.HasValue && free.HasValue ? Math.Max(0, total.Value - free.Value) : null;
+        return new(total, used, free);
+    }
+
+    private static string VramText(double? value) => value.HasValue ? $"{value:F1} GB" : "—";
+
+    private static SolidColorBrush BrushFromHex(string hex)
+    {
+        var value = hex.TrimStart('#');
+        return new SolidColorBrush(Windows.UI.Color.FromArgb(255,
+            Convert.ToByte(value[..2], 16), Convert.ToByte(value.Substring(2, 2), 16), Convert.ToByte(value.Substring(4, 2), 16)));
     }
 
     private static double? CurrentPeakTemperature(HardwareSnapshot snapshot) =>
@@ -609,12 +775,14 @@ public sealed partial class MainWindow : Window
 
         _dashboardCpuValue?.SetValue(TextBlock.TextProperty, Pct(snapshot.Cpu.Usage));
         _dashboardGpuValue?.SetValue(TextBlock.TextProperty, Pct(snapshot.Gpu.Usage));
+        SetTemperatureText(_dashboardCpuTemperatureValue, CpuDisplayTemperature(snapshot));
+        SetTemperatureText(_dashboardCpuPackageTemperatureValue, CpuPackageTemperature(snapshot));
+        SetTemperatureText(_dashboardGpuTemperatureValue, snapshot.Gpu.Temperature);
         _dashboardMemoryValue?.SetValue(TextBlock.TextProperty, $"{snapshot.MemoryUsedGb:F1}");
-        var temperature = CurrentPeakTemperature(snapshot);
-        _dashboardTemperatureValue?.SetValue(TextBlock.TextProperty, temperature.HasValue ? $"{temperature:F0} °C" : "—");
-        _dashboardCpuChart?.AddSample(snapshot.Cpu.Usage);
-        _dashboardGpuChart?.AddSample(snapshot.Gpu.Usage);
-        _dashboardTemperatureChart?.AddSample(temperature);
+        SetTemperatureText(_dashboardStorageValue, snapshot.StorageTemperature);
+        _dashboardStorageDetail?.SetValue(TextBlock.TextProperty, StorageTransferSummary(snapshot));
+        UpdateStorageSummary(snapshot);
+        AddDashboardChartSamples(snapshot);
     }
 
     private async Task<UIElement> ReportsTablePageAsync()
@@ -1029,6 +1197,66 @@ public sealed partial class MainWindow : Window
 
     private static string GetStructureSignature(HardwareSnapshot snapshot) => string.Join('|',
         snapshot.Devices.SelectMany(device => new[] { $"D:{device.Identifier}" }.Concat(device.Sensors.Select(sensor => $"S:{sensor.Identifier}"))));
+
+    private static IEnumerable<SensorMetric> CpuTemperatureSensors(HardwareSnapshot snapshot) => snapshot.Devices
+        .Where(device => device.Type.Equals("Cpu", StringComparison.OrdinalIgnoreCase))
+        .SelectMany(device => device.Sensors)
+        .Where(sensor => sensor.Type.Equals("Temperature", StringComparison.OrdinalIgnoreCase) && sensor.Value.HasValue);
+
+    private static string StorageDeviceName(HardwareSnapshot snapshot) => snapshot.Devices
+        .FirstOrDefault(device => device.Type.Contains("Storage", StringComparison.OrdinalIgnoreCase))?.Name
+        ?? "Unidade do sistema";
+
+    private static string MemoryDeviceName(HardwareSnapshot snapshot)
+    {
+        var memory = snapshot.Devices.FirstOrDefault(device =>
+            device.Type.Equals("Memory", StringComparison.OrdinalIgnoreCase) &&
+            !device.Name.Contains("Virtual Memory", StringComparison.OrdinalIgnoreCase) &&
+            !device.Name.Contains("Total Memory", StringComparison.OrdinalIgnoreCase));
+        return memory?.Name ?? $"{snapshot.MemoryTotalGb:F1} GB RAM";
+    }
+
+    private static string StorageTransferSummary(HardwareSnapshot snapshot) =>
+        $"Leitura {TransferRate(snapshot.StorageReadMBs)}  ·  Escrita {TransferRate(snapshot.StorageWriteMBs)}";
+
+    private static string TransferRate(double? value) => value.HasValue ? $"{value:F1} MB/s" : "—";
+
+    private static string Capacity(double gigabytes) => gigabytes >= 1024
+        ? $"{gigabytes / 1024:F2} TB"
+        : $"{gigabytes:F0} GB";
+
+    private static double? CpuDisplayTemperature(HardwareSnapshot snapshot)
+    {
+        var sensors = CpuTemperatureSensors(snapshot).ToArray();
+        return sensors.FirstOrDefault(sensor => sensor.Name.Contains("CCD", StringComparison.OrdinalIgnoreCase) && sensor.Name.Contains("Tdie", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? sensors.FirstOrDefault(sensor => sensor.Name.Contains("Core Average", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? sensors.FirstOrDefault(sensor => sensor.Name.Contains("Core", StringComparison.OrdinalIgnoreCase) && !sensor.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? snapshot.Cpu.Temperature;
+    }
+
+    private static double? CpuPackageTemperature(HardwareSnapshot snapshot)
+    {
+        var sensors = CpuTemperatureSensors(snapshot).ToArray();
+        return sensors.FirstOrDefault(sensor => sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? sensors.FirstOrDefault(sensor => sensor.Name.Contains("Tctl/Tdie", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? sensors.FirstOrDefault(sensor => sensor.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? snapshot.Cpu.Temperature;
+    }
+
+    private static void SetTemperatureText(TextBlock? text, double? temperature)
+    {
+        if (text == null) return;
+        text.Text = Temp(temperature);
+        text.Foreground = TemperatureBrush(temperature);
+    }
+
+    private static Brush TemperatureBrush(double? temperature) => temperature switch
+    {
+        null => DesignTokens.Muted,
+        < 60 => DesignTokens.Accent,
+        < 80 => DesignTokens.Warning,
+        _ => DesignTokens.Danger
+    };
 
     private static void AddSensorRow(Grid grid, int row, string name, string type, string value, string minimum, string maximum, bool header)
     {
@@ -1488,12 +1716,25 @@ public sealed partial class MainWindow : Window
     private UIElement StressTestDashboard()
     {
         _combinedStressStart = PrimaryButton("▷  Executar todos");
-        _combinedStressStop = SecondaryButton("□  Parar");
-        _combinedStressStop.Visibility = Visibility.Collapsed;
-        _combinedStressStart.Click += async (_, _) => await _viewModel.StartCombinedStressAsync(TimeSpan.FromMinutes(2));
-        _combinedStressStop.Click += (_, _) => _viewModel.StopCombinedStress();
-        var headerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        headerActions.Children.Add(_combinedStressStop);
+        _combinedStressStop = null;
+        _combinedStressStart.Click += async (_, _) =>
+        {
+            if (_viewModel.CombinedStressStatus is StressStatus.Running or StressStatus.Cancelling)
+            {
+                _viewModel.StopCombinedStress();
+                return;
+            }
+            var duration = GetCombinedDuration();
+            if (!duration.HasValue)
+            {
+                _status.Text = "Informe uma duração personalizada válida em minutos.";
+                return;
+            }
+            await _viewModel.StartCombinedStressAsync(duration.Value);
+        };
+        _combinedDurationControl = BuildCombinedDurationSelector();
+        var headerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        headerActions.Children.Add(_combinedDurationControl);
         headerActions.Children.Add(_combinedStressStart);
 
         var page = Page("Stress Test", "Cada teste possui gráfico próprio com carga, e o resumo é registrado nos relatórios.", "CARGA  ·  DIAGNÓSTICO", false, headerActions);
@@ -1503,18 +1744,24 @@ public sealed partial class MainWindow : Window
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        _compactCpuStressChart = new CompactAreaChart("Carga", "#42D286", 180);
-        _compactGpuStressChart = new CompactAreaChart("Carga", "#43A8E5", 180);
-        _compactMemoryStressChart = new CompactAreaChart("Carga", "#FFB21C", 180);
-        _compactStorageStressChart = new CompactAreaChart("Carga", "#A970FF", 180);
         var snapshot = _viewModel.Snapshot;
+        var vramTotal = GpuVram(snapshot).Total;
+        var vramScale = Math.Max(1, vramTotal ?? 1);
+        _compactCpuStressChart = new MultiLineChart("Telemetria", [
+            new("usage", "Uso", "#42D286", "%"), new("cpuTemp", "CPU", "#FFB21C", " °C"), new("pkgTemp", "PKG", "#FF5C6C", " °C")], 180, false);
+        _compactGpuStressChart = new MultiLineChart("Telemetria", [
+            new("usage", "Uso", "#43A8E5", "%"), new("temperature", "Temp", "#FFB21C", " °C"),
+            new("vramTotal", "VRAM total", "#A970FF", " GB", vramScale),
+            new("vramUsed", "VRAM uso", "#FF7B43", " GB", vramScale),
+            new("vramFree", "VRAM livre", "#42D286", " GB", vramScale)], 180, false);
+        _compactMemoryStressChart = new MultiLineChart("Telemetria", [
+            new("usage", "Uso", "#FFB21C", " GB", Math.Max(1, snapshot.MemoryTotalGb)),
+            new("total", "Total", "#A970FF", " GB", Math.Max(1, snapshot.MemoryTotalGb)),
+            new("free", "Livre", "#42D286", " GB", Math.Max(1, snapshot.MemoryTotalGb))], 180, false);
+        _compactStorageStressChart = new MultiLineChart("Telemetria", [
+            new("usage", "Uso", "#A970FF", "%"), new("read", "Leitura", "#42D286", " MB/s", null), new("write", "Escrita", "#FF7B43", " MB/s", null)], 180, false);
         for (var index = 0; index < 24; index++)
-        {
-            _compactCpuStressChart.AddSample(snapshot.Cpu.Usage);
-            _compactGpuStressChart.AddSample(snapshot.Gpu.Usage);
-            _compactMemoryStressChart.AddSample(snapshot.MemoryTotalGb > 0 ? snapshot.MemoryUsedGb / snapshot.MemoryTotalGb * 100 : 0);
-            _compactStorageStressChart.AddSample(snapshot.StorageLoad);
-        }
+            AddStressChartSamples(snapshot);
 
         _cpuStressStart = SecondaryButton("▷  Iniciar");
         _cpuStressStop = SecondaryButton("□  Parar");
@@ -1522,8 +1769,8 @@ public sealed partial class MainWindow : Window
         _cpuStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
         _cpuStressStart.Click += async (_, _) => await _viewModel.StartCpuStressAsync(TimeSpan.FromMinutes(2));
         _cpuStressStop.Click += (_, _) => _viewModel.StopCpuStress();
-        AddStressVisualCard(grid, 0, 0, "CPU Stress", "Prime95 · Small FFT · 16 threads", "\uE950", DesignTokens.Accent,
-            snapshot.Cpu.Usage, _compactCpuStressChart, _cpuStressState, _cpuStressStart, _cpuStressStop);
+        _cpuStressStats = AddStressVisualCard(grid, 0, 0, "CPU Stress", snapshot.Cpu.Name, "\uE950", DesignTokens.Accent,
+            [("usage", "USO", "#42D286"), ("cpuTemp", "TEMP CPU", "#FFB21C"), ("pkgTemp", "TEMP PKG", "#FF5C6C")], _compactCpuStressChart, _cpuStressState, _cpuStressStart, _cpuStressStop);
 
         _gpuStressStart = SecondaryButton("▷  Iniciar");
         _gpuStressStop = SecondaryButton("□  Parar");
@@ -1531,8 +1778,8 @@ public sealed partial class MainWindow : Window
         _gpuStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
         _gpuStressStart.Click += async (_, _) => await _viewModel.StartGpuStressAsync(TimeSpan.FromMinutes(2));
         _gpuStressStop.Click += (_, _) => _viewModel.StopGpuStress();
-        AddStressVisualCard(grid, 1, 0, "GPU Stress", "FurMark · 1440p · MSAA 8x", "\uE7F4", DesignTokens.Info,
-            snapshot.Gpu.Usage, _compactGpuStressChart, _gpuStressState, _gpuStressStart, _gpuStressStop);
+        _gpuStressStats = AddStressVisualCard(grid, 1, 0, "GPU Stress", snapshot.Gpu.Name, "\uE7F4", DesignTokens.Info,
+            [("usage", "USO", "#43A8E5"), ("temperature", "TEMP GPU", "#FFB21C"), ("vramTotal", "TOTAL", "#A970FF"), ("vramUsed", "USO", "#FF7B43"), ("vramFree", "LIVRE", "#42D286")], _compactGpuStressChart, _gpuStressState, _gpuStressStart, _gpuStressStop);
 
         _memoryStressStart = SecondaryButton("▷  Iniciar");
         _memoryStressStop = SecondaryButton("□  Parar");
@@ -1540,9 +1787,8 @@ public sealed partial class MainWindow : Window
         _memoryStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
         _memoryStressStart.Click += async (_, _) => await _viewModel.StartMemoryStressAsync(TimeSpan.FromMinutes(2));
         _memoryStressStop.Click += (_, _) => _viewModel.StopMemoryStress();
-        var memoryLoad = snapshot.MemoryTotalGb > 0 ? snapshot.MemoryUsedGb / snapshot.MemoryTotalGb * 100 : 0;
-        AddStressVisualCard(grid, 0, 1, "Memória", "MemTest · padrão aleatório", "\uE93B", DesignTokens.Warning,
-            memoryLoad, _compactMemoryStressChart, _memoryStressState, _memoryStressStart, _memoryStressStop);
+        _memoryStressStats = AddStressVisualCard(grid, 0, 1, "Memória", MemoryDeviceName(snapshot), "\uE93B", DesignTokens.Warning,
+            [("usage", "USO", "#FFB21C"), ("total", "TOTAL", "#A970FF"), ("free", "LIVRE", "#42D286")], _compactMemoryStressChart, _memoryStressState, _memoryStressStart, _memoryStressStop);
 
         _storageReadStart = SecondaryButton("▷  Iniciar");
         _storageWriteStart = SecondaryButton("Escrita");
@@ -1552,8 +1798,8 @@ public sealed partial class MainWindow : Window
         _storageStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
         _storageReadStart.Click += async (_, _) => await _viewModel.StartStorageReadStressAsync(TimeSpan.FromMinutes(2));
         _storageStressStop.Click += (_, _) => _viewModel.StopStorageStress();
-        AddStressVisualCard(grid, 1, 1, "Disco", "Leitura escrita sequencial 1MB", "\uE7C3", new SolidColorBrush(Windows.UI.Color.FromArgb(255, 169, 112, 255)),
-            snapshot.StorageLoad, _compactStorageStressChart, _storageStressState, _storageReadStart, _storageStressStop);
+        _storageStressStats = AddStressVisualCard(grid, 1, 1, "Disco", StorageDeviceName(snapshot), "\uE7C3", new SolidColorBrush(Windows.UI.Color.FromArgb(255, 169, 112, 255)),
+            [("usage", "USO", "#A970FF"), ("read", "LEITURA", "#42D286"), ("write", "ESCRITA", "#FF7B43")], _compactStorageStressChart, _storageStressState, _storageReadStart, _storageStressStop);
 
         void LayoutStress(double width) => ArrangeResponsive(grid, width >= 960 ? 2 : 1);
         grid.SizeChanged += (_, eventArgs) => LayoutStress(eventArgs.NewSize.Width);
@@ -1563,12 +1809,13 @@ public sealed partial class MainWindow : Window
         UpdateGpuStressUi();
         UpdateMemoryStressUi();
         UpdateStorageStressUi();
+        UpdateStressHardwareStats(snapshot);
         UpdateCombinedStressUi();
         return Scroll(page);
     }
 
-    private static void AddStressVisualCard(Grid grid, int column, int row, string title, string subtitle, string glyph, Brush color,
-        double? current, CompactAreaChart chart, TextBlock state, Button start, Button stop)
+    private static IReadOnlyDictionary<string, TextBlock> AddStressVisualCard(Grid grid, int column, int row, string title, string subtitle, string glyph, Brush color,
+        IReadOnlyList<(string Key, string Label, string Color)> statDefinitions, MultiLineChart chart, TextBlock state, Button start, Button stop)
     {
         var header = new Grid { ColumnSpacing = 12 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1589,18 +1836,46 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(actions, 2);
         header.Children.Add(actions);
 
-        var stats = new Grid { ColumnSpacing = 10 };
+        var stats = new Grid { ColumnSpacing = 10, RowSpacing = 10 };
         for (var index = 0; index < 3; index++) stats.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var value = current ?? 0;
-        var statValues = new[] { ("ATUAL", value), ("MÉDIA", value * 0.93), ("PICO", Math.Min(100, value * 1.05)) };
-        for (var index = 0; index < statValues.Length; index++)
+        stats.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var statValues = new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
+        var regularStats = statDefinitions.Where(definition => !definition.Key.StartsWith("vram", StringComparison.OrdinalIgnoreCase)).ToArray();
+        for (var index = 0; index < regularStats.Length; index++)
         {
+            var definition = regularStats[index];
+            var statColor = BrushFromHex(definition.Color);
             var stat = new StackPanel { Spacing = 5 };
-            stat.Children.Add(new TextBlock { Text = statValues[index].Item1, FontFamily = new FontFamily("Consolas"), FontSize = 9, CharacterSpacing = 140, Foreground = DesignTokens.Muted });
-            stat.Children.Add(new TextBlock { Text = $"{statValues[index].Item2:F1}%", FontFamily = new FontFamily("Consolas"), FontSize = 22, FontWeight = FontWeights.Bold, Foreground = DesignTokens.Text });
+            stat.Children.Add(new TextBlock { Text = definition.Label, FontFamily = new FontFamily("Consolas"), FontSize = 9, CharacterSpacing = 100, Foreground = statColor });
+            var statValue = new TextBlock { Text = "—", FontFamily = new FontFamily("Consolas"), FontSize = 20, FontWeight = FontWeights.Bold, Foreground = statColor };
+            statValues[definition.Key] = statValue;
+            stat.Children.Add(statValue);
             var surface = new Border { Background = DesignTokens.Inset, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 9, 12, 9), Child = stat };
             Grid.SetColumn(surface, index);
             stats.Children.Add(surface);
+        }
+
+        var vramStats = statDefinitions.Where(definition => definition.Key.StartsWith("vram", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (vramStats.Length > 0)
+        {
+            var vramGrid = new Grid { ColumnSpacing = 8 };
+            for (var index = 0; index < vramStats.Length; index++) vramGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (var index = 0; index < vramStats.Length; index++)
+            {
+                var definition = vramStats[index];
+                var statColor = BrushFromHex(definition.Color);
+                var value = new TextBlock { Text = "—", FontFamily = new FontFamily("Consolas"), FontSize = 13, FontWeight = FontWeights.Bold, Foreground = statColor };
+                statValues[definition.Key] = value;
+                var item = new StackPanel { Spacing = 3, Children =
+                {
+                    new TextBlock { Text = definition.Label, FontFamily = new FontFamily("Consolas"), FontSize = 8, Foreground = statColor }, value
+                }};
+                Grid.SetColumn(item, index);
+                vramGrid.Children.Add(item);
+            }
+            var vramSurface = new Border { Background = DesignTokens.Inset, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 8, 10, 8), Child = vramGrid };
+            Grid.SetColumn(vramSurface, regularStats.Length);
+            stats.Children.Add(vramSurface);
         }
 
         var stack = new StackPanel { Spacing = 14 };
@@ -1612,6 +1887,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(card, column);
         Grid.SetRow(card, row);
         grid.Children.Add(card);
+        return statValues;
     }
 
     private static TextBlock StatusLine(string text) => new()
@@ -1731,6 +2007,41 @@ public sealed partial class MainWindow : Window
 
         page.Children.Add(scrollHost);
         return page;
+    }
+
+    private StackPanel BuildCombinedDurationSelector()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        _combinedDurationCombo = new ComboBox { MinWidth = 118, Height = 36 };
+        var durations = new (string Label, TimeSpan? Value)[]
+        {
+            ("30 s", TimeSpan.FromSeconds(30)),
+            ("1 min", TimeSpan.FromMinutes(1)),
+            ("5 min", TimeSpan.FromMinutes(5)),
+            ("10 min", TimeSpan.FromMinutes(10)),
+            ("30 min", TimeSpan.FromMinutes(30)),
+            ("1 hora", TimeSpan.FromHours(1)),
+            ("Ilimitado", Timeout.InfiniteTimeSpan),
+            ("Personalizado", null)
+        };
+        foreach (var duration in durations)
+            _combinedDurationCombo.Items.Add(new ComboBoxItem { Content = duration.Label, Tag = duration.Value });
+        _combinedDurationCombo.SelectedIndex = 1;
+        _combinedCustomMinutes = new TextBox { PlaceholderText = "minutos", Width = 86, Height = 36, Visibility = Visibility.Collapsed };
+        _combinedDurationCombo.SelectionChanged += (_, _) =>
+            _combinedCustomMinutes.Visibility = (_combinedDurationCombo.SelectedItem as ComboBoxItem)?.Tag is null ? Visibility.Visible : Visibility.Collapsed;
+        row.Children.Add(_combinedDurationCombo);
+        row.Children.Add(_combinedCustomMinutes);
+        return row;
+    }
+
+    private TimeSpan? GetCombinedDuration()
+    {
+        if (_combinedDurationCombo?.SelectedItem is not ComboBoxItem selected) return null;
+        if (selected.Tag is TimeSpan duration) return duration;
+        return double.TryParse(_combinedCustomMinutes?.Text, out var minutes) && minutes > 0
+            ? TimeSpan.FromMinutes(minutes)
+            : null;
     }
 
     private static (StackPanel Row, Func<TimeSpan> GetDuration) CreateDurationSelector()
@@ -2155,23 +2466,25 @@ public sealed partial class MainWindow : Window
 
     private void UpdateCombinedStressUi()
     {
-        if (_combinedStressState is null || _combinedStressStart is null || _combinedStressStop is null) return;
+        if (_combinedStressStart is null) return;
 
         var running = _viewModel.CombinedStressStatus == StressStatus.Running;
         var cancelling = _viewModel.CombinedStressStatus == StressStatus.Cancelling;
-        _combinedStressState.Text = _viewModel.CombinedStressStatus switch
-        {
-            StressStatus.Running => "Executando todos os testes simultaneamente...",
-            StressStatus.Cancelling => "Cancelando...",
-            StressStatus.Completed => "Combined Test concluído.",
-            StressStatus.Cancelled => "Combined Test cancelado.",
-            StressStatus.Failed => "Falha no Combined Test.",
-            _ => "Pronto — inicia CPU + GPU + RAM + Storage (leitura) simultaneamente."
-        };
-        _combinedStressStart.IsEnabled = !running && !cancelling;
-        _combinedStressStop.IsEnabled = running || cancelling;
-        _combinedStressStart.Visibility = running || cancelling ? Visibility.Collapsed : Visibility.Visible;
-        _combinedStressStop.Visibility = running || cancelling ? Visibility.Visible : Visibility.Collapsed;
+        if (_combinedStressState != null)
+            _combinedStressState.Text = _viewModel.CombinedStressStatus switch
+            {
+                StressStatus.Running => "Executando todos os testes simultaneamente...",
+                StressStatus.Cancelling => "Cancelando...",
+                StressStatus.Completed => "Combined Test concluído.",
+                StressStatus.Cancelled => "Combined Test cancelado.",
+                StressStatus.Failed => "Falha no Combined Test.",
+                _ => "Pronto — inicia CPU + GPU + RAM + Storage (leitura) simultaneamente."
+            };
+        _combinedStressStart.Content = cancelling ? "□  Parando todos..." : running ? "□  Parar todos" : "▷  Executar todos";
+        _combinedStressStart.IsEnabled = !cancelling;
+        _combinedStressStart.Background = running ? DesignTokens.Danger : DesignTokens.Accent;
+        if (_combinedDurationCombo != null) _combinedDurationCombo.IsEnabled = !running && !cancelling;
+        if (_combinedCustomMinutes != null) _combinedCustomMinutes.IsEnabled = !running && !cancelling;
 
         // Refresh individual UIs to disable their start buttons when combined is running
         UpdateCpuStressUi();

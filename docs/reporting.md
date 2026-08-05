@@ -33,6 +33,8 @@ Gerado em A4 com Community License. Inclui:
 
 ## UI (Relatórios)
 
-- Botão "Atualizar lista" recarrega do banco
-- Cada card tem: "Ver detalhes" (collapse/expand com tabela de entradas), "Exportar PDF", "Excluir"
-- Detalhes carregados sob demanda (`GetReportDetailAsync`)
+- A tabela apresenta ID, teste, data, duração, pico térmico, status e ações.
+- Um clique na linha abre ou fecha o painel integrado de detalhes.
+- O painel expandido mostra seis métricas resumidas e o registro cronológico do teste.
+- O botão PDF é independente do collapse e exporta o documento para `Documents\EMEDiagnostics`.
+- Em janelas estreitas, a tabela conserva as colunas e disponibiliza rolagem horizontal.

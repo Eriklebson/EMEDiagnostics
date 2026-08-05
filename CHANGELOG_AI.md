@@ -1,5 +1,20 @@
 # Relatório de desenvolvimento
 
+## 2026-08-05 — v1.4.0 — telemetria avançada e Stress Test
+
+- Corrigida a atualização visual do botão combinado para `Parar todos` e adicionada a duração `Ilimitado`.
+- O teste combinado ganhou seleção de duração com opção personalizada e botão único que alterna entre Executar todos e Parar todos.
+- VRAM agrupada em um único bloco compacto no Stress Test; valores foram removidos das legendas dos gráficos e os cards passaram a usar as cores das séries.
+- Removidas as métricas artificiais Atual/Média/Pico do Stress Test; cada card agora mostra telemetria real específica e as mesmas informações em linhas individuais nos gráficos.
+- Os cartões do Stress Test agora identificam CPU, GPU, memória e disco reais no lugar de nomes como Prime95, FurMark e MemTest.
+- Corrigido o raio excessivo da barra de capacidade do armazenamento; o preenchimento agora usa raio fixo de 2 px.
+- O card inferior de Armazenamento agora mostra capacidade real do disco do sistema: espaço usado, livre e total.
+- Restaurado o preenchimento sombreado em gradiente sob cada série dos gráficos multissérie do Dashboard.
+- Os gráficos do Dashboard passaram a suportar múltiplas linhas e valores por série: uso/CPU/PKG, uso/temperatura da GPU e temperatura/leitura/escrita do SSD.
+- O quarto cartão do Dashboard deixou de repetir a maior temperatura e passou a apresentar o SSD, com temperatura, leitura e escrita em tempo real.
+- Corrigida a distinção térmica da CPU: CCD/Tdie é apresentado como `CPU`, enquanto Package/Tctl/Tdie é apresentado como `PKG`; números térmicos agora mudam entre verde, âmbar e vermelho por faixa.
+- Dashboard atualizado para exibir temperaturas ao lado do percentual de uso: `CPU | PKG` no cartão da CPU e temperatura principal no cartão da GPU.
+- Documentação de continuidade adicionada com visão geral da versão 1.3.0, mapa funcional, arquivos de entrada, checklist de atualização e descrição completa do módulo de rede.
 - Implementados os breakpoints responsivos do layout de referência no Dashboard, Stress Test e Hardware; Relatórios preserva a tabela com rolagem horizontal em telas estreitas.
 - Substituídos os glifos quebrados de memória e PDF por símbolos nativos do WinUI.
 

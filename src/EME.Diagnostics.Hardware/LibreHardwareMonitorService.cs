@@ -123,6 +123,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
                 .ToArray();
 
             var (storageReadMBs, storageWriteMBs) = FindStorageThroughput(all);
+            var (storageUsedGb, storageFreeGb, storageTotalGb) = FindSystemDriveCapacity();
             return new HardwareSnapshot(
                 DateTimeOffset.Now,
                 ToMetric(cpu, "CPU não detectada"),
@@ -134,10 +135,33 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitor
                 FindStorageLoad(all),
                 storageReadMBs,
                 storageWriteMBs,
+                storageUsedGb,
+                storageFreeGb,
+                storageTotalGb,
                 fans,
                 devices);
         }
         finally { _gate.Release(); }
+    }
+
+    private static (double UsedGb, double FreeGb, double TotalGb) FindSystemDriveCapacity()
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Environment.SystemDirectory);
+            if (string.IsNullOrWhiteSpace(root)) return (0, 0, 0);
+            var drive = new DriveInfo(root);
+            if (!drive.IsReady || drive.TotalSize <= 0) return (0, 0, 0);
+            const double bytesPerGb = 1024d * 1024d * 1024d;
+            var total = drive.TotalSize / bytesPerGb;
+            var free = drive.AvailableFreeSpace / bytesPerGb;
+            return (Math.Max(0, total - free), free, total);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Log($"Falha ao ler capacidade da unidade do sistema: {ex.Message}");
+            return (0, 0, 0);
+        }
     }
 
     private ComponentMetric ToMetric(IHardware? hardware, string fallback)

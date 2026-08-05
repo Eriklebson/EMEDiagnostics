@@ -33,3 +33,5 @@ Publica `StorageStressMetrics` com IOPS, throughput, latência.
 
 Executa CPU + GPU + RAM + Storage simultaneamente.
 Usa `StressCatalogService` com `CancellationTokenSource` compartilhado.
+
+Na página principal, o controle combinado usa um único botão que alterna entre `Executar todos` e `Parar todos`. A duração pode ser selecionada entre 30 segundos, 1, 5, 10 ou 30 minutos, 1 hora, execução ilimitada e um valor personalizado informado em minutos. O seletor fica desabilitado durante a execução.

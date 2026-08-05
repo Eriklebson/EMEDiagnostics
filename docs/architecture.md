@@ -7,6 +7,7 @@ EME.Diagnostics.App        (UI — WinUI 3, MVVM)
   ├── EME.Diagnostics.Services   (Stress engines, report repository)
   ├── EME.Diagnostics.Hardware   (LibreHardwareMonitor wrapper)
   ├── EME.Diagnostics.Reporting  (QuestPDF generation)
+  ├── EME.Diagnostics.Networking (Descoberta LAN, servidor HTTP e envio de PDFs)
   ├── EME.Diagnostics.Core       (Models, contracts/interfaces)
   ├── EME.Diagnostics.Shared     (ProductInfo, constants)
   ├── EME.Diagnostics.GpuEngine  (Native C++ DLL — DirectX 11 Compute)
@@ -32,6 +33,8 @@ services.AddSingleton<IReportRepository, ReportRepository>();
 services.AddSingleton<StressDataCollector>();
 services.AddSingleton<IReportService, ReportService>();
 services.AddSingleton<StressCatalogService>();
+services.AddSingleton<ServerService>();
+services.AddSingleton<ClientService>();
 services.AddSingleton<MainViewModel>();
 services.AddSingleton<MainWindow>();
 ```

@@ -9,7 +9,7 @@ Este projeto segue Semantic Versioning: `MAJOR.MINOR.PATCH`
 `src/EME.Diagnostics.Shared/ProductInfo.cs`:
 
 ```csharp
-public const string Version = "1.3.0";
+public const string Version = "1.4.0";
 public const string WindowsVersion = Version + ".0";
 ```
 
@@ -17,12 +17,12 @@ public const string WindowsVersion = Version + ".0";
 
 | Arquivo | Localização | Formato | Exemplo |
 |---------|-------------|---------|---------|
-| `src/EME.Diagnostics.Shared/ProductInfo.cs` | `Version` | 3-part | `1.3.0` |
-| `src/EME.Diagnostics.Shared/ProductInfo.cs` | `WindowsVersion` | 4-part | `1.3.0.0` |
-| `src/EME.Diagnostics.App/app.manifest` | `assemblyIdentity version` | 4-part | `1.3.0.0` |
-| `installer.iss` | `AppVersion` + `OutputBaseFilename` | 4-part | `1.3.0.0` |
-| `CHANGELOG_AI.md` | Tabela de versões | 3-part | `1.3.0` |
-| `README.md` | Tabela de versões no final | 3-part | `1.3.0` |
+| `src/EME.Diagnostics.Shared/ProductInfo.cs` | `Version` | 3-part | `1.4.0` |
+| `src/EME.Diagnostics.Shared/ProductInfo.cs` | `WindowsVersion` | 4-part | `1.4.0.0` |
+| `src/EME.Diagnostics.App/app.manifest` | `assemblyIdentity version` | 4-part | `1.4.0.0` |
+| `installer.iss` | `AppVersion` + `OutputBaseFilename` | 4-part | `1.4.0.0` |
+| `CHANGELOG_AI.md` | Tabela de versões | 3-part | `1.4.0` |
+| `README.md` | Tabela de versões no final | 3-part | `1.4.0` |
 
 `Version` identifica a release SemVer. `WindowsVersion` acrescenta a revisão formal `0` e é usada na sidebar e nos artefatos do Windows.
 

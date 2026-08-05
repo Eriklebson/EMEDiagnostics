@@ -1,5 +1,7 @@
 # Coleta de Hardware
 
+Além dos sensores do LibreHardwareMonitor, a camada de hardware coleta a capacidade da unidade do sistema pelo Windows e publica `StorageUsedGb`, `StorageFreeGb` e `StorageTotalGb` no `HardwareSnapshot`.
+
 ## LibreHardwareMonitor
 
 Wrapper em `EME.Diagnostics.Hardware.LibreHardwareMonitorService` que implementa `IHardwareMonitor`.

@@ -162,6 +162,17 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 
 ## Histórico de Versões
 
+### v1.4.0 (2026-08-05) — Telemetria avançada e Stress Test
+
+| Tipo | Mudança |
+|------|---------|
+| 📊 Dashboard | Temperaturas CPU/PKG, SSD e gráficos multissérie com gradientes |
+| 💾 Armazenamento | Capacidade usada, livre e total da unidade do sistema |
+| 🔥 Stress Test | Métricas reais de CPU, GPU, VRAM, memória e disco |
+| ⏱️ Controle | Duração de 30 s a 1 h, ilimitada ou personalizada e botão Parar todos |
+| 📚 Documentação | Visão geral do sistema e módulo de rede documentados |
+| ⚙️ Build | 0 erros, 0 warnings. v1.4.0 |
+
 ### v1.3.0 (2026-08-05) — Novo layout e responsividade
 
 | Tipo | Mudança |
