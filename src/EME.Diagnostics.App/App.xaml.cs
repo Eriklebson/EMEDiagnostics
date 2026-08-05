@@ -20,6 +20,16 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        UnhandledException += (_, exceptionArgs) =>
+        {
+            try
+            {
+                var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EMEDiagnostics");
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, "ui_crash.log"), $"{DateTime.Now:O}\r\n{exceptionArgs.Exception}\r\n{exceptionArgs.Message}");
+            }
+            catch { }
+        };
         _host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
@@ -42,10 +52,20 @@ public partial class App : Application
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        ThreadPool.SetMinThreads(32, 32);
-        await _host.StartAsync();
-        _window = _host.Services.GetRequiredService<MainWindow>();
-        _window.Closed += async (_, _) => { await _host.StopAsync(); _host.Dispose(); };
-        _window.Activate();
+        try
+        {
+            ThreadPool.SetMinThreads(32, 32);
+            await _host.StartAsync();
+            _window = _host.Services.GetRequiredService<MainWindow>();
+            _window.Closed += async (_, _) => { await _host.StopAsync(); _host.Dispose(); };
+            _window.Activate();
+        }
+        catch (Exception ex)
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EMEDiagnostics");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "ui_crash.log"), $"{DateTime.Now:O}\r\n{ex}");
+            throw;
+        }
     }
 }

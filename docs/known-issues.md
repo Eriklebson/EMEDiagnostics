@@ -1,5 +1,10 @@
 # Problemas Conhecidos
 
+## Inicialização da interface
+
+- Evitar controles que dependam de recursos internos de tema quando houver alternativa desenhada pelo aplicativo. O `ProgressBar` do armazenamento tentou resolver `TabViewScrollButtonBackground` e encerrou o processo com `0xc000027b`; ele foi substituído por uma barra própria.
+- Exceções fatais capturáveis da interface são registradas em `%LOCALAPPDATA%\EMEDiagnostics\ui_crash.log`.
+
 ## PawnIO Driver
 
 - LHM 0.9.6+ requer PawnIO driver para acesso ring 0 (SMU/MSR)

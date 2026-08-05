@@ -1,5 +1,38 @@
 # Relatório de desenvolvimento
 
+- Implementados os breakpoints responsivos do layout de referência no Dashboard, Stress Test e Hardware; Relatórios preserva a tabela com rolagem horizontal em telas estreitas.
+- Substituídos os glifos quebrados de memória e PDF por símbolos nativos do WinUI.
+
+## 2026-08-05 — v1.3.0 — redesign visual e responsividade
+
+- Rodapé de versão fixado na base da sidebar e exibição alterada para o formato Windows de quatro partes (`v1.3.0.0`); a release SemVer permanece corretamente em `1.3.0`.
+- Substituído o raio de cápsula dos indicadores “Coletando” e de status por raios fixos de 8 px e 6 px, evitando deformação visual no WinUI.
+- Corrigido clique duplo no collapse de Relatórios removendo a sobreposição entre os eventos da linha e do chevron.
+- Indicadores “Coletando” e “Aprovado”, botão PDF e chevron ajustados às dimensões, padding, cores e bordas medidos na referência web.
+- Collapse de Relatórios redesenhado conforme a referência: linha clicável, métricas em grade 2x3, registro de eventos, chevron e exportação PDF independente.
+- Removido o limite central de 1280 px que gerava margens excessivas em monitores largos; o corpo das páginas agora usa toda a largura disponível.
+- Corrigida falha de inicialização `0xc000027b`: o `ProgressBar` do armazenamento solicitava o recurso WinUI ausente `TabViewScrollButtonBackground`; a barra agora é desenhada pelo aplicativo.
+- Exceções fatais capturáveis da interface passam a ser registradas em `%LOCALAPPDATA%\EMEDiagnostics\ui_crash.log`.
+
+- Corrigida falha de inicialização `0xc000027b`: o `ProgressBar` do armazenamento solicitava o recurso WinUI ausente `TabViewScrollButtonBackground`; a barra agora é desenhada pelo aplicativo.
+- Exceções fatais capturáveis da interface passam a ser registradas em `%LOCALAPPDATA%\EMEDiagnostics\ui_crash.log`.
+
+- Criado backup externo completo do estado anterior em `C:\laragon\www\EMEDiagnostics_Backups` antes das alterações.
+- Atualizada a fundação Cyber Dark com fundo, sidebar, cartões, bordas e superfícies mais próximos da referência visual aprovada.
+- Sidebar ampliada para 256 px, com item ativo destacado por superfície elevada e marcador verde.
+- Cabeçalhos passaram a exibir estado do sistema, indicador de coleta e separador visual.
+- Dashboard reorganizado com quatro cartões principais: CPU, GPU, memória e temperatura.
+- Cores dos gráficos harmonizadas: verde para CPU, azul para GPU e superfícies internas mais escuras.
+- Conteúdo principal centralizado em uma coluna de 1280 px, igual à proporção desktop da referência.
+- Criado `CompactAreaChart`, controle WinUI para gráficos compactos com grade, linha e preenchimento em gradiente.
+- Dashboard reconstruído com gráficos CPU/GPU/temperatura e painel de armazenamento.
+- Stress Test reconstruído como grade 2x2 de cartões com métricas Atual/Média/Pico, gráficos integrados e controles funcionais.
+- Hardware reconstruído como grade 3x2 de cartões de inventário com dados reais disponíveis.
+- Relatórios reconstruído como tabela expansível com badges de status e exportação PDF por linha.
+- Corrigida falha de inicialização `0xc000027b`: o `ProgressBar` do armazenamento solicitava o recurso WinUI ausente `TabViewScrollButtonBackground`; a barra agora é desenhada pelo aplicativo.
+- Exceções fatais capturáveis da interface passam a ser registradas em `%LOCALAPPDATA%\EMEDiagnostics\ui_crash.log`.
+- Preservadas as funções e alterações locais preexistentes durante o redesign.
+
 ## 2026-07-30 — v1.2.0 — Rede LAN, modo Servidor/Cliente, auto-envio de PDF
 
 - **Adicionado** novo projeto `EME.Diagnostics.Networking` com `ServerService`, `ClientService`.

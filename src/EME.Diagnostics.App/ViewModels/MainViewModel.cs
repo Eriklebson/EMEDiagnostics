@@ -120,14 +120,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task AutoSendReportToServer(long reportId)
     {
+        NetDiagnostics.Log($"AutoSendReportToServer called: reportId={reportId}, IsConnected={_clientService.IsConnected}, Server={_clientService.ConnectedServer?.HostName}");
+
         if (reportId <= 0)
         {
+            NetDiagnostics.Log($"reportId={reportId} <= 0, skipping");
             Status = "Relatório vazio — nada a enviar para o servidor.";
             return;
         }
 
         if (!_clientService.IsConnected)
         {
+            NetDiagnostics.Log("Client not connected, skipping send");
             Status = "Não conectado a nenhum servidor — relatório salvo apenas localmente.";
             return;
         }
@@ -137,14 +141,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var detail = await _reportRepository.GetReportAsync(reportId);
             if (detail == null)
             {
+                NetDiagnostics.Log($"Report #{reportId} not found in local DB");
                 Status = $"Relatório #{reportId} não encontrado no banco local.";
                 return;
             }
+
+            NetDiagnostics.Log($"Loaded report: type={detail.TestType}, status={detail.Status}, result={detail.Result}");
 
             var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
             Directory.CreateDirectory(docs);
             var pdfPath = Path.Combine(docs, $"Relatorio_{reportId}_{DateTime.Now:yyyy-MM-dd_HHmmss}.pdf");
             await _reportService.ExportPdfAsync(reportId, pdfPath);
+            NetDiagnostics.Log($"PDF generated at {pdfPath}");
 
             Status = $"Enviando relatório {detail.TestType} para {_clientService.ConnectedServer?.HostName}...";
 
@@ -155,6 +163,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 detail.Status,
                 detail.Result);
 
+            NetDiagnostics.Log($"Send result: {sent}");
+
             Status = sent
                 ? $"Relatório {detail.TestType} enviado para {_clientService.ConnectedServer?.HostName}."
                 : $"Falha ao enviar relatório para {_clientService.ConnectedServer?.HostName}. Verifique se o servidor está online.";
@@ -163,6 +173,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            NetDiagnostics.Log($"Exception in AutoSendReportToServer: {ex.GetType().Name}: {ex.Message}");
             Status = $"Erro ao enviar relatório: {ex.Message}";
         }
     }
@@ -497,6 +508,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task<StressReportDetail?> GetReportDetailAsync(long id)
     {
         return await _reportRepository.GetReportAsync(id);
+    }
+
+    public string? GetReceivedReportPdfPath(RemoteReportInfo report)
+    {
+        if (string.IsNullOrEmpty(report?.Id)) return null;
+        var dir = _serverService.ReportsDirectory;
+        var files = Directory.GetFiles(dir, $"{report.Id}_*.pdf");
+        return files.FirstOrDefault();
+    }
+
+    public async Task<string?> ExportReceivedReportPdfAsync(RemoteReportInfo report)
+    {
+        var srcPath = GetReceivedReportPdfPath(report);
+        if (srcPath == null) return null;
+
+        var docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EMEDiagnostics");
+        Directory.CreateDirectory(docs);
+        var destPath = Path.Combine(docs, $"Relatorio_{report.MachineName}_{report.TestType}_{report.Id}.pdf");
+        await Task.Run(() => File.Copy(srcPath, destPath, overwrite: true));
+        return destPath;
     }
 
     public async Task<string> ExportReportPdfAsync(long id)

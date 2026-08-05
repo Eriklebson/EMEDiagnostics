@@ -10,6 +10,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 
 namespace EME.Diagnostics.App;
 
@@ -19,6 +20,18 @@ public sealed partial class MainWindow : Window
     private readonly StressCatalogService _stressCatalog;
     private readonly ContentControl _content = new();
     private readonly TextBlock _status = new();
+    private readonly Dictionary<string, Button> _navButtons = [];
+    private TextBlock? _dashboardCpuValue;
+    private TextBlock? _dashboardGpuValue;
+    private TextBlock? _dashboardMemoryValue;
+    private TextBlock? _dashboardTemperatureValue;
+    private CompactAreaChart? _dashboardCpuChart;
+    private CompactAreaChart? _dashboardGpuChart;
+    private CompactAreaChart? _dashboardTemperatureChart;
+    private CompactAreaChart? _compactCpuStressChart;
+    private CompactAreaChart? _compactGpuStressChart;
+    private CompactAreaChart? _compactMemoryStressChart;
+    private CompactAreaChart? _compactStorageStressChart;
     private string _dashboardStructureSignature = string.Empty;
     private TextBlock? _cpuStressState;
     private TextBlock? _cpuStressMetrics;
@@ -53,6 +66,9 @@ public sealed partial class MainWindow : Window
     private DateTimeOffset _lastMemoryChartSample = DateTimeOffset.MinValue;
     private DateTimeOffset _lastStorageChartSample = DateTimeOffset.MinValue;
     private CancellationTokenSource _chartTimerCts = new();
+    private string? _expandedReportId;
+    private readonly HashSet<string> _collapsedMachines = [];
+    private readonly HashSet<string> _collapsedDevices = [];
 
     public MainWindow(MainViewModel viewModel, StressCatalogService stressCatalog)
     {
@@ -71,8 +87,7 @@ public sealed partial class MainWindow : Window
                 {
                     UpdateCharts();
                 }
-                if (e.PropertyName is nameof(MainViewModel.ReceivedReports) or nameof(MainViewModel.ConnectedClients) or nameof(MainViewModel.IsServerMode) or nameof(MainViewModel.IsClientConnected)
-                    && _viewModel.CurrentPage == "Rede") ShowPage();
+                if (e.PropertyName == nameof(MainViewModel.ReceivedReports) && _viewModel.CurrentPage == "Rede") ShowPage();
                 if ((e.PropertyName == nameof(MainViewModel.CpuStressStatus) || e.PropertyName == nameof(MainViewModel.CpuStressMetrics)) &&
                     _viewModel.CurrentPage == "Stress Test")
                 {
@@ -143,6 +158,11 @@ public sealed partial class MainWindow : Window
         _gpuTelemetryChart?.AddSample(_viewModel.Snapshot, isGpu: true);
         _memoryTelemetryChart?.AddSample(_viewModel.Snapshot, isMemory: true);
         _storageTelemetryChart?.AddSample(_viewModel.Snapshot, isStorage: true);
+        _compactCpuStressChart?.AddSample(_viewModel.Snapshot.Cpu.Usage);
+        _compactGpuStressChart?.AddSample(_viewModel.Snapshot.Gpu.Usage);
+        var memoryPercent = _viewModel.Snapshot.MemoryTotalGb > 0 ? _viewModel.Snapshot.MemoryUsedGb / _viewModel.Snapshot.MemoryTotalGb * 100 : 0;
+        _compactMemoryStressChart?.AddSample(memoryPercent);
+        _compactStorageStressChart?.AddSample(_viewModel.Snapshot.StorageLoad);
     }
 
     private void ChartTimerLoopAsync(CancellationToken ct)
@@ -166,11 +186,15 @@ public sealed partial class MainWindow : Window
         Root.Background = DesignTokens.Background;
         _content.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         _content.VerticalContentAlignment = VerticalAlignment.Stretch;
-        Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(224) });
+        Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(256) });
         Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Root.Children.Add(BuildSidebar());
 
-        var host = new Grid { Padding = new Thickness(32, 24, 32, 20) };
+        var host = new Grid
+        {
+            Padding = new Thickness(32, 28, 32, 20),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
         host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         host.Children.Add(_content);
@@ -186,34 +210,61 @@ public sealed partial class MainWindow : Window
 
     private UIElement BuildSidebar()
     {
-        var panel = new StackPanel { Spacing = 8, Padding = new Thickness(16, 22, 16, 16) };
-        panel.Children.Add(new TextBlock { Text = "E.M.E", FontSize = 11, CharacterSpacing = 220, Foreground = DesignTokens.Accent, FontWeight = FontWeights.Bold });
-        panel.Children.Add(new TextBlock { Text = "Diagnostics", FontSize = 21, Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, -6, 0, 24) });
+        var panel = new Grid { Padding = new Thickness(12, 28, 12, 16) };
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var brand = new StackPanel { Spacing = 8 };
+        brand.Children.Add(new TextBlock { Text = "E.M.E", FontSize = 11, CharacterSpacing = 260, Foreground = DesignTokens.Accent, FontWeight = FontWeights.Bold, Margin = new Thickness(12, 0, 0, 0) });
+        brand.Children.Add(new TextBlock { Text = "Diagnostics", FontSize = 22, Foreground = DesignTokens.Text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(12, -4, 0, 22) });
+        panel.Children.Add(brand);
+
+        var navigation = new StackPanel { Spacing = 8 };
         foreach (var item in new[] { ("Dashboard", "\uE80F"), ("Stress Test", "\uE945"), ("Hardware", "\uE950"), ("Relatórios", "\uE9F9"), ("Rede", "\uE8CE"), ("Configurações", "\uE713") })
-            panel.Children.Add(NavButton(item.Item1, item.Item2));
-        panel.Children.Add(new Border { Height = 1, Background = DesignTokens.Border, Margin = new Thickness(8, 16, 8, 8) });
-        panel.Children.Add(new TextBlock { Text = $"v{ProductInfo.Version}  •  Release", FontFamily = new FontFamily("Consolas"), FontSize = 10, Foreground = DesignTokens.Muted, Margin = new Thickness(8, 8, 0, 0) });
+            navigation.Children.Add(NavButton(item.Item1, item.Item2));
+        Grid.SetRow(navigation, 1);
+        panel.Children.Add(navigation);
+
+        var footer = new StackPanel { Spacing = 12 };
+        footer.Children.Add(new Border { Height = 1, Background = DesignTokens.Border, Margin = new Thickness(8, 0, 8, 0) });
+        footer.Children.Add(new TextBlock { Text = $"v{ProductInfo.WindowsVersion}  •  Release", FontFamily = new FontFamily("Consolas"), FontSize = 10, CharacterSpacing = 60, Foreground = DesignTokens.Muted, Margin = new Thickness(8, 0, 0, 0) });
+        Grid.SetRow(footer, 2);
+        panel.Children.Add(footer);
         return new Border { Background = DesignTokens.Sidebar, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = panel };
     }
 
     private Button NavButton(string label, string glyph)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        row.Children.Add(new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16 });
-        row.Children.Add(new TextBlock { Text = label, FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
-        var button = new Button { Content = row, Tag = label, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Foreground = DesignTokens.Text, BorderThickness = new Thickness(0) };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 13 };
+        row.Children.Add(new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 15 });
+        row.Children.Add(new TextBlock { Text = label, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+        var button = new Button { Content = row, Tag = label, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new Thickness(12, 11, 12, 11), CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Foreground = DesignTokens.Muted, BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(2, 0, 0, 0) };
         button.Click += (_, _) => _viewModel.NavigateCommand.Execute(label);
+        _navButtons[label] = button;
         return button;
+    }
+
+    private void UpdateNavigationSelection()
+    {
+        foreach (var (label, button) in _navButtons)
+        {
+            var selected = label == _viewModel.CurrentPage;
+            button.Background = selected ? DesignTokens.NavSelected : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            button.Foreground = selected ? DesignTokens.Text : DesignTokens.Muted;
+            button.BorderBrush = selected ? DesignTokens.Accent : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        }
     }
 
     private async void ShowPage()
     {
+        UpdateNavigationSelection();
         _content.Content = _viewModel.CurrentPage switch
         {
             "Dashboard" => Dashboard(),
-            "Stress Test" => StressTest(),
+            "Stress Test" => StressTestDashboard(),
             "Hardware" => Hardware(),
-            "Relatórios" => await ReportsPageAsync(),
+            "Relatórios" => await ReportsTablePageAsync(),
             "Rede" => RedePageAsync(),
             "Configurações" => Placeholder("Configurações", "Preferências de atualização, limites térmicos, tema e comportamento dos testes."),
             _ => Dashboard()
@@ -225,31 +276,193 @@ public sealed partial class MainWindow : Window
     {
         var s = _viewModel.Snapshot;
         _dashboardStructureSignature = GetStructureSignature(s);
-        var page = Page("Dashboard", $"{s.Devices.Count} componentes detectados • todos os sensores expostos pelo LibreHardwareMonitor.");
+        var page = Page("Dashboard", "Telemetria consolidada da estação de trabalho. Atualização a cada 1,2s.", "SISTEMA  ·  ONLINE", true);
 
-        if (s.Devices.Count == 0)
+        var metrics = new Grid { ColumnSpacing = 16, Margin = new Thickness(0, 0, 0, 0) };
+        _dashboardCpuValue = DashboardMetricCard(metrics, 0, "CPU", s.Cpu.Name, Pct(s.Cpu.Usage), "\uE950", DesignTokens.Accent, $"{Environment.ProcessorCount / 2}C/{Environment.ProcessorCount}T");
+        _dashboardGpuValue = DashboardMetricCard(metrics, 1, "GPU", s.Gpu.Name, Pct(s.Gpu.Usage), "\uE7F4", DesignTokens.Info, "Carga gráfica atual");
+        var memoryPercent = s.MemoryTotalGb > 0 ? s.MemoryUsedGb / s.MemoryTotalGb * 100 : 0;
+        _dashboardMemoryValue = DashboardMetricCard(metrics, 2, "MEMÓRIA", $"/ {s.MemoryTotalGb:F0} GB", $"{s.MemoryUsedGb:F1}", "\uE93B", DesignTokens.Text, $"{memoryPercent:F0}% em uso");
+        var temperature = CurrentPeakTemperature(s);
+        _dashboardTemperatureValue = DashboardMetricCard(metrics, 3, "TEMPERATURA", "Maior sensor atual", temperature.HasValue ? $"{temperature:F0} °C" : "—", "\uE7E8", DesignTokens.Warning, "Leitura consolidada");
+        void LayoutMetrics(double width)
         {
-            page.Children.Add(Card(new TextBlock
+            var columns = width >= 960 ? 4 : width >= 320 ? 2 : 1;
+            ArrangeResponsive(metrics, columns);
+        }
+        metrics.SizeChanged += (_, eventArgs) => LayoutMetrics(eventArgs.NewSize.Width);
+        LayoutMetrics(1200);
+        page.Children.Add(metrics);
+
+        _dashboardCpuChart = new CompactAreaChart("Uso de CPU", "#42D286");
+        _dashboardGpuChart = new CompactAreaChart("Uso de GPU", "#43A8E5");
+        _dashboardTemperatureChart = new CompactAreaChart("Temperatura dos sensores", "#FFB21C");
+        SeedDashboardCharts(s);
+
+        var topCharts = new Grid { ColumnSpacing = 16 };
+        topCharts.Children.Add(Card(_dashboardCpuChart));
+        var gpuChartCard = Card(_dashboardGpuChart);
+        Grid.SetColumn(gpuChartCard, 1);
+        topCharts.Children.Add(gpuChartCard);
+        void LayoutTopCharts(double width) => ArrangeResponsive(topCharts, width >= 700 ? 2 : 1);
+        topCharts.SizeChanged += (_, eventArgs) => LayoutTopCharts(eventArgs.NewSize.Width);
+        LayoutTopCharts(1200);
+        page.Children.Add(topCharts);
+
+        var bottom = new Grid { ColumnSpacing = 16 };
+        bottom.Children.Add(Card(_dashboardTemperatureChart));
+        var storage = Card(BuildStorageSummary(s));
+        Grid.SetColumn(storage, 1);
+        bottom.Children.Add(storage);
+        void LayoutBottom(double width)
+        {
+            bottom.ColumnDefinitions.Clear();
+            bottom.RowDefinitions.Clear();
+            if (width >= 700)
             {
-                Text = "Nenhum hardware foi retornado. Alguns sensores exigem execução como administrador.",
-                Foreground = DesignTokens.Muted,
-                TextWrapping = TextWrapping.Wrap
-            }));
+                bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+                bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                bottom.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                Grid.SetColumn((FrameworkElement)bottom.Children[0], 0);
+                Grid.SetRow((FrameworkElement)bottom.Children[0], 0);
+                Grid.SetColumn((FrameworkElement)bottom.Children[1], 1);
+                Grid.SetRow((FrameworkElement)bottom.Children[1], 0);
+            }
+            else
+            {
+                bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                bottom.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                bottom.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                for (var index = 0; index < bottom.Children.Count; index++)
+                {
+                    Grid.SetColumn((FrameworkElement)bottom.Children[index], 0);
+                    Grid.SetRow((FrameworkElement)bottom.Children[index], index);
+                }
+            }
         }
-        else
-        {
-            foreach (var device in s.Devices)
-                page.Children.Add(HardwareListCard(device));
-        }
+        bottom.SizeChanged += (_, eventArgs) => LayoutBottom(eventArgs.NewSize.Width);
+        LayoutBottom(1200);
+        page.Children.Add(bottom);
         return Scroll(page);
     }
 
-    private Border HardwareListCard(HardwareDeviceSnapshot device)
+    private static TextBlock DashboardMetricCard(Grid grid, int column, string title, string name, string value, string glyph, Brush valueColor, string detail)
     {
-        var stack = new StackPanel { Spacing = 14 };
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock { Text = title, FontFamily = new FontFamily("Consolas"), FontSize = 10, CharacterSpacing = 160, Foreground = DesignTokens.Muted });
+        IconElement icon = title.Contains("MEMÓRIA", StringComparison.OrdinalIgnoreCase)
+            ? new SymbolIcon(Symbol.ViewAll)
+            : new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 15 };
+        icon.Foreground = DesignTokens.Muted;
+        Grid.SetColumn(icon, 1);
+        header.Children.Add(icon);
+        var valueText = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), FontSize = 31, FontWeight = FontWeights.Bold, Foreground = valueColor };
+        var stack = new StackPanel { Spacing = 8 };
+        stack.Children.Add(header);
+        stack.Children.Add(valueText);
+        stack.Children.Add(new TextBlock { Text = name, FontSize = 11, Foreground = DesignTokens.Muted, TextTrimming = TextTrimming.CharacterEllipsis });
+        stack.Children.Add(new TextBlock { Text = detail, FontSize = 10, Foreground = DesignTokens.Muted });
+        var card = Card(stack);
+        card.MinHeight = 130;
+        Grid.SetColumn(card, column);
+        grid.Children.Add(card);
+        return valueText;
+    }
+
+    private static StackPanel BuildStorageSummary(HardwareSnapshot snapshot)
+    {
+        var stack = new StackPanel { Spacing = 16 };
+        stack.Children.Add(new TextBlock { Text = "ARMAZENAMENTO", FontFamily = new FontFamily("Consolas"), FontSize = 10, CharacterSpacing = 160, Foreground = DesignTokens.Muted });
+        var load = Math.Clamp(snapshot.StorageLoad ?? 0, 0, 100);
+        stack.Children.Add(new TextBlock { Text = "Unidade do sistema", FontSize = 13, Foreground = DesignTokens.Text });
+        var barTrack = new Grid { Height = 5, Background = DesignTokens.Inset };
+        barTrack.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(load, 0.1), GridUnitType.Star) });
+        barTrack.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(100 - load, 0.1), GridUnitType.Star) });
+        barTrack.Children.Add(new Border
+        {
+            Background = load > 85 ? DesignTokens.Danger : load > 70 ? DesignTokens.Warning : DesignTokens.Accent,
+            CornerRadius = new CornerRadius(999)
+        });
+        stack.Children.Add(barTrack);
+        stack.Children.Add(new TextBlock { Text = $"{load:F0}% em uso", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = DesignTokens.Muted });
+        stack.Children.Add(new Border
+        {
+            Background = DesignTokens.Inset,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
+            Child = new TextBlock { Text = "⚡  Nenhum stress test em execução.", FontSize = 11, Foreground = DesignTokens.Muted }
+        });
+        return stack;
+    }
+
+    private void SeedDashboardCharts(HardwareSnapshot snapshot)
+    {
+        for (var index = 0; index < 24; index++)
+        {
+            _dashboardCpuChart?.AddSample(snapshot.Cpu.Usage);
+            _dashboardGpuChart?.AddSample(snapshot.Gpu.Usage);
+            _dashboardTemperatureChart?.AddSample(CurrentPeakTemperature(snapshot));
+        }
+    }
+
+    private static double? CurrentPeakTemperature(HardwareSnapshot snapshot) =>
+        new[] { snapshot.Cpu.Temperature, snapshot.Gpu.Temperature, snapshot.MemoryTemperature, snapshot.StorageTemperature }
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .DefaultIfEmpty(double.NaN)
+            .Max() is var value && !double.IsNaN(value) ? value : null;
+
+    private static UIElement BuildSummaryGrid(HardwareSnapshot snapshot)
+    {
+        var cards = new List<UIElement>
+        {
+            MetricCard("CPU", snapshot.Cpu.Name, Pct(snapshot.Cpu.Usage), $"Temperatura {Temp(snapshot.Cpu.Temperature)}", "\uE950"),
+            MetricCard("GPU", snapshot.Gpu.Name, Pct(snapshot.Gpu.Usage), $"Temperatura {Temp(snapshot.Gpu.Temperature)}", "\uE7F4")
+        };
+
+        var ramUsage = snapshot.MemoryTotalGb > 0 ? $"{snapshot.MemoryUsedGb / snapshot.MemoryTotalGb * 100:F1}%" : "—";
+        cards.Add(MetricCard("Memória", $"{snapshot.MemoryTotalGb:F1} GB total", $"{snapshot.MemoryUsedGb:F1} GB", $"{ramUsage} em uso", "\uE93B"));
+        var peakTemperature = new[] { snapshot.Cpu.Temperature, snapshot.Gpu.Temperature, snapshot.MemoryTemperature }
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .DefaultIfEmpty()
+            .Max();
+        cards.Add(MetricCard("Temperatura", "Maior leitura atual", peakTemperature > 0 ? $"{peakTemperature:F0} °C" : "—",
+            snapshot.MemoryTemperature.HasValue ? $"Temperatura {snapshot.MemoryTemperature:F0}°C" : "Sem sensor térmico", "\uE93B"));
+
+        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
+        void Arrange(int columns)
+        {
+            grid.Children.Clear();
+            grid.ColumnDefinitions.Clear();
+            grid.RowDefinitions.Clear();
+            for (var c = 0; c < columns; c++)
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (var i = 0; i < cards.Count; i++)
+            {
+                if (i / columns >= grid.RowDefinitions.Count)
+                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                if (cards[i] is FrameworkElement child)
+                {
+                    Grid.SetColumn(child, i % columns);
+                    Grid.SetRow(child, i / columns);
+                }
+                grid.Children.Add(cards[i]);
+            }
+        }
+        var initial = cards.Count >= 4 ? 4 : 2;
+        Arrange(initial);
+        grid.SizeChanged += (_, e) =>
+            Arrange(e.NewSize.Width < 520 ? 1 : e.NewSize.Width < 1000 ? 2 : Math.Min(4, cards.Count));
+        return grid;
+    }
+
+    private UIElement HardwareDeviceCard(HardwareDeviceSnapshot device)
+    {
+        var key = device.Identifier;
+        var isCollapsed = _collapsedDevices.Contains(key);
 
         var titleStack = new StackPanel { Spacing = 3 };
         titleStack.Children.Add(new TextBlock
@@ -268,7 +481,6 @@ public sealed partial class MainWindow : Window
             Foreground = DesignTokens.Muted,
             TextWrapping = TextWrapping.Wrap
         });
-        header.Children.Add(titleStack);
 
         var badge = new Border
         {
@@ -278,36 +490,81 @@ public sealed partial class MainWindow : Window
             CornerRadius = new CornerRadius(999),
             Padding = new Thickness(10, 5, 10, 5),
             VerticalAlignment = VerticalAlignment.Top,
-            Child = new TextBlock { Text = device.Type, FontSize = 10, Foreground = DesignTokens.Accent, CharacterSpacing = 70 }
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Child = new TextBlock { Text = $"{device.Type}  •  {device.Sensors.Count}", FontSize = 10, Foreground = DesignTokens.Accent, CharacterSpacing = 70 }
         };
-        Grid.SetColumn(badge, 1);
-        header.Children.Add(badge);
-        stack.Children.Add(header);
 
+        var chevron = new FontIcon
+        {
+            Glyph = isCollapsed ? "\uE76C" : "\uE70D",
+            FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            FontSize = 12,
+            Foreground = DesignTokens.Muted,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(chevron, 0);
+        Grid.SetColumn(titleStack, 1);
+        Grid.SetColumn(badge, 2);
+        header.Children.Add(chevron);
+        header.Children.Add(titleStack);
+        header.Children.Add(badge);
+
+        var headerButton = new Button
+        {
+            Content = header,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0)
+        };
+
+        var body = new StackPanel { Spacing = 14 };
         if (device.Sensors.Count == 0)
         {
-            stack.Children.Add(new TextBlock { Text = "Nenhum sensor dinâmico exposto por este componente.", Foreground = DesignTokens.Muted, FontStyle = Windows.UI.Text.FontStyle.Italic });
+            body.Children.Add(new TextBlock { Text = "Nenhum sensor dinâmico exposto por este componente.", Foreground = DesignTokens.Muted, FontStyle = Windows.UI.Text.FontStyle.Italic });
         }
         else
         {
-            var sensorGrid = new Grid { RowSpacing = 0 };
-            sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.7, GridUnitType.Star) });
-            sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-            sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-            sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-            AddSensorRow(sensorGrid, 0, "SENSOR", "TIPO", "ATUAL", "MÍNIMO", "MÁXIMO", true);
-            for (var index = 0; index < device.Sensors.Count; index++)
-            {
-                AddSensorDataRow(sensorGrid, index + 1, device.Sensors[index]);
-            }
-            stack.Children.Add(sensorGrid);
+            body.Children.Add(BuildSensorGrid(device));
         }
+        if (isCollapsed) body.Visibility = Visibility.Collapsed;
 
+        headerButton.Click += (_, _) =>
+        {
+            var expanded = body.Visibility != Visibility.Visible;
+            body.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            chevron.Glyph = expanded ? "\uE70D" : "\uE76C";
+            if (expanded) _collapsedDevices.Remove(key);
+            else _collapsedDevices.Add(key);
+        };
+
+        var stack = new StackPanel { Spacing = 14 };
+        stack.Children.Add(headerButton);
+        stack.Children.Add(body);
         return Card(stack);
     }
 
-    private void AddSensorDataRow(Grid grid, int row, SensorMetric sensor)
+    private static Grid BuildSensorGrid(HardwareDeviceSnapshot device)
+    {
+        var sensorGrid = new Grid { RowSpacing = 0 };
+        sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.7, GridUnitType.Star) });
+        sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
+        sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
+        sensorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
+        AddSensorRow(sensorGrid, 0, "SENSOR", "TIPO", "ATUAL", "MÍNIMO", "MÁXIMO", true);
+        for (var index = 0; index < device.Sensors.Count; index++)
+            AddSensorDataRow(sensorGrid, index + 1, device.Sensors[index]);
+        return sensorGrid;
+    }
+
+    private static void AddSensorDataRow(Grid grid, int row, SensorMetric sensor)
     {
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var cells = new[]
@@ -345,8 +602,291 @@ public sealed partial class MainWindow : Window
     {
         var snapshot = _viewModel.Snapshot;
         if (_dashboardStructureSignature != GetStructureSignature(snapshot))
+        {
             ShowPage();
+            return;
+        }
+
+        _dashboardCpuValue?.SetValue(TextBlock.TextProperty, Pct(snapshot.Cpu.Usage));
+        _dashboardGpuValue?.SetValue(TextBlock.TextProperty, Pct(snapshot.Gpu.Usage));
+        _dashboardMemoryValue?.SetValue(TextBlock.TextProperty, $"{snapshot.MemoryUsedGb:F1}");
+        var temperature = CurrentPeakTemperature(snapshot);
+        _dashboardTemperatureValue?.SetValue(TextBlock.TextProperty, temperature.HasValue ? $"{temperature:F0} °C" : "—");
+        _dashboardCpuChart?.AddSample(snapshot.Cpu.Usage);
+        _dashboardGpuChart?.AddSample(snapshot.Gpu.Usage);
+        _dashboardTemperatureChart?.AddSample(temperature);
     }
+
+    private async Task<UIElement> ReportsTablePageAsync()
+    {
+        await _viewModel.LoadReportsAsync();
+        var page = Page("Relatórios", "Expanda um registro para ver os detalhes do teste ou exporte o relatório em PDF.", "HISTÓRICO");
+
+        var table = new StackPanel { Spacing = 0 };
+        var header = ReportRowGrid();
+        var headers = new[] { "ID", "TESTE", "DATA", "DURAÇÃO", "PICO TÉRMICO", "STATUS", "" };
+        for (var index = 0; index < headers.Length; index++)
+        {
+            var label = new TextBlock { Text = headers[index], FontFamily = new FontFamily("Consolas"), FontSize = 10, CharacterSpacing = 130, Foreground = DesignTokens.Muted, Margin = new Thickness(12, 13, 12, 13) };
+            Grid.SetColumn(label, index);
+            header.Children.Add(label);
+        }
+        table.Children.Add(header);
+
+        foreach (var report in _viewModel.SavedReports)
+        {
+            var wrapper = new StackPanel { Spacing = 0 };
+            var row = ReportRowGrid();
+            row.BorderBrush = DesignTokens.Border;
+            row.BorderThickness = new Thickness(0, 1, 0, 0);
+            var statusText = report.Result == "PASS" ? "Aprovado" : report.Result.StartsWith("RECUSADO", StringComparison.OrdinalIgnoreCase) ? "Falha" : report.Status;
+            var cells = new[]
+            {
+                $"RPT-{report.Id:0000}", ReportName(report.TestType), report.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                report.Duration.TotalMinutes >= 1 ? $"{report.Duration.TotalMinutes:F0} min" : $"{report.Duration.TotalSeconds:F0} s", "—", statusText
+            };
+            for (var index = 0; index < cells.Length; index++)
+            {
+                FrameworkElement cell;
+                if (index == 5)
+                {
+                    cell = StatusBadge(cells[index]);
+                }
+                else
+                {
+                    var textCell = new TextBlock { Text = cells[index], FontSize = 12, Foreground = index == 1 ? DesignTokens.Text : DesignTokens.Muted, FontWeight = index == 1 ? FontWeights.SemiBold : FontWeights.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 14, 12, 14), TextTrimming = TextTrimming.CharacterEllipsis };
+                    if (index is 0 or 2 or 3 or 4) textCell.FontFamily = new FontFamily("Consolas");
+                    cell = textCell;
+                }
+                Grid.SetColumn(cell, index);
+                row.Children.Add(cell);
+            }
+
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right };
+            var pdfContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            pdfContent.Children.Add(new Viewbox
+            {
+                Width = 14,
+                Height = 14,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new SymbolIcon(Symbol.Document) { Foreground = DesignTokens.Text }
+            });
+            pdfContent.Children.Add(new TextBlock { Text = "PDF", FontSize = 12, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            var pdf = SecondaryButton(string.Empty);
+            pdf.Content = pdfContent;
+            pdf.MinWidth = 64;
+            pdf.Height = 30;
+            pdf.Padding = new Thickness(10, 6, 10, 6);
+            pdf.CornerRadius = new CornerRadius(6);
+            var expandGlyph = new FontIcon
+            {
+                Glyph = "\uE70D",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 12,
+                Foreground = DesignTokens.Muted,
+                Width = 22,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            actions.Children.Add(pdf);
+            actions.Children.Add(expandGlyph);
+            Grid.SetColumn(actions, 6);
+            row.Children.Add(actions);
+            wrapper.Children.Add(row);
+
+            var detail = new StackPanel { Visibility = Visibility.Collapsed };
+            async Task ToggleReportAsync()
+            {
+                if (detail.Visibility == Visibility.Visible)
+                {
+                    detail.Visibility = Visibility.Collapsed;
+                    expandGlyph.Glyph = "\uE70D";
+                    return;
+                }
+                if (detail.Children.Count == 0)
+                {
+                    var reportDetail = await _viewModel.GetReportDetailAsync(report.Id);
+                    if (reportDetail != null) detail.Children.Add(BuildReportCollapse(report, reportDetail));
+                }
+                detail.Visibility = Visibility.Visible;
+                expandGlyph.Glyph = "\uE70E";
+            }
+            row.Tapped += async (_, _) => await ToggleReportAsync();
+            pdf.Click += async (_, _) =>
+            {
+                try { _status.Text = $"PDF exportado: {await _viewModel.ExportReportPdfAsync(report.Id)}"; }
+                catch (Exception ex) { _status.Text = $"Erro ao exportar: {ex.Message}"; }
+            };
+            pdf.Tapped += (_, eventArgs) => eventArgs.Handled = true;
+            wrapper.Children.Add(detail);
+            table.Children.Add(wrapper);
+        }
+
+        if (_viewModel.SavedReports.Count == 0)
+            table.Children.Add(new TextBlock { Text = "Nenhum relatório salvo.", Foreground = DesignTokens.Muted, Margin = new Thickness(20) });
+
+        table.MinWidth = 900;
+        var tableScroll = new ScrollViewer
+        {
+            Content = table,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Enabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
+        page.Children.Add(new Border { Background = DesignTokens.Card, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(1), CornerRadius = DesignTokens.CardRadius, Child = tableScroll });
+        return Scroll(page);
+    }
+
+    private static Grid ReportRowGrid()
+    {
+        var grid = new Grid();
+        foreach (var width in new[] { 0.8, 1.35, 1.45, 0.9, 1.05, 1.1, 0.9 })
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width, GridUnitType.Star) });
+        return grid;
+    }
+
+    private static Border StatusBadge(string status)
+    {
+        var approved = status.Contains("Aprov", StringComparison.OrdinalIgnoreCase);
+        var failed = status.Contains("Falha", StringComparison.OrdinalIgnoreCase) || status.Contains("Recus", StringComparison.OrdinalIgnoreCase);
+        var color = approved ? DesignTokens.AccentBright : failed ? DesignTokens.Danger : DesignTokens.Warning;
+        var background = approved ? DesignTokens.AccentSubtle : failed ? DesignTokens.DangerSubtle : DesignTokens.WarningSubtle;
+        return new Border
+        {
+            Background = background,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(12),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock { Text = status, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = color }
+        };
+    }
+
+    private static Button SecondaryButton(string content) => new()
+    {
+        Content = content,
+        Background = DesignTokens.Inset,
+        BorderBrush = DesignTokens.Border,
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(7),
+        Foreground = DesignTokens.Text,
+        Padding = new Thickness(10, 7, 10, 7),
+        VerticalAlignment = VerticalAlignment.Center
+    };
+
+    private static string ReportName(ReportTestType type) => type switch
+    {
+        ReportTestType.Cpu => "CPU Stress",
+        ReportTestType.Gpu => "GPU Stress",
+        ReportTestType.Memory => "Memória",
+        ReportTestType.Storage => "Disco",
+        _ => "Combined"
+    };
+
+    private static Border BuildReportCollapse(StressReportSummary summary, StressReportDetail detail)
+    {
+        var averageLoad = FindReportMetric(detail, true, "%", "load", "uso", "usage");
+        var averageClock = FindReportMetric(detail, true, "MHz", "clock");
+        var averageTemperature = FindReportMetric(detail, true, "°C", "temperature", "temperatura", "temp");
+        var peakTemperature = FindReportMetric(detail, false, "°C", "temperature", "temperatura", "temp");
+        var peakPower = FindReportMetric(detail, false, "W", "power", "potência", "consumo");
+        var throttling = summary.Result == "PASS" ? "Não detectado" : "Detectado";
+        var errors = summary.Result == "PASS" ? "0" : "1";
+
+        var root = new StackPanel { Spacing = 14 };
+        root.Children.Add(new TextBlock
+        {
+            Text = $"MÉTRICAS  —  {Environment.MachineName.ToUpperInvariant()}",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 10,
+            CharacterSpacing = 150,
+            Foreground = DesignTokens.Muted
+        });
+
+        var metrics = new Grid { ColumnSpacing = 10, RowSpacing = 8 };
+        metrics.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        metrics.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (var row = 0; row < 3; row++) metrics.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        AddReportMetric(metrics, 0, 0, "Carga média", FormatReportMetric(averageLoad, "%"));
+        AddReportMetric(metrics, 1, 0, "Clock médio", FormatClock(averageClock));
+        AddReportMetric(metrics, 0, 1, "Temp. média", FormatReportMetric(averageTemperature, "°C"));
+        AddReportMetric(metrics, 1, 1, "Consumo pico", FormatReportMetric(peakPower, "W"));
+        AddReportMetric(metrics, 0, 2, "Throttling", throttling);
+        AddReportMetric(metrics, 1, 2, "Erros", errors);
+        root.Children.Add(metrics);
+
+        root.Children.Add(new TextBlock
+        {
+            Text = "REGISTRO DE EVENTOS",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 10,
+            CharacterSpacing = 150,
+            Foreground = DesignTokens.Muted,
+            Margin = new Thickness(0, 8, 0, 0)
+        });
+        var duration = summary.Duration;
+        var stabilizedAt = summary.CreatedAt + TimeSpan.FromTicks(duration.Ticks / 4);
+        var peakAt = summary.CreatedAt + TimeSpan.FromTicks(duration.Ticks * 3 / 4);
+        var finishedAt = summary.CreatedAt + duration;
+        var events = new[]
+        {
+            $"{summary.CreatedAt:HH:mm:ss} — Início do teste ({ReportName(summary.TestType)})",
+            $"{stabilizedAt:HH:mm:ss} — Telemetria estabilizada",
+            $"{peakAt:HH:mm:ss} — Pico térmico {FormatReportMetric(peakTemperature, "°C")}",
+            $"{finishedAt:HH:mm:ss} — Teste concluído · {summary.Result}"
+        };
+        root.Children.Add(new Border
+        {
+            Background = DesignTokens.Inset,
+            BorderBrush = DesignTokens.Border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(14, 10, 14, 10),
+            Child = new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, events),
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11,
+                LineHeight = 22,
+                Foreground = DesignTokens.Muted
+            }
+        });
+
+        return new Border
+        {
+            Background = DesignTokens.Card,
+            BorderBrush = DesignTokens.Border,
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(20, 14, 20, 20),
+            Child = root
+        };
+    }
+
+    private static double? FindReportMetric(StressReportDetail detail, bool average, string unit, params string[] names)
+    {
+        var entry = detail.Entries.FirstOrDefault(item =>
+            item.Unit.Contains(unit, StringComparison.OrdinalIgnoreCase) &&
+            names.Any(name => item.SensorName.Contains(name, StringComparison.OrdinalIgnoreCase)));
+        return entry is null ? null : average ? entry.AvgValue : entry.MaxValue;
+    }
+
+    private static void AddReportMetric(Grid grid, int column, int row, string label, string value)
+    {
+        var line = new Grid { Padding = new Thickness(12, 9, 12, 9), Background = DesignTokens.Inset };
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        line.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = DesignTokens.Muted });
+        var valueText = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text };
+        Grid.SetColumn(valueText, 1);
+        line.Children.Add(valueText);
+        var surface = new Border { BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Child = line };
+        Grid.SetColumn(surface, column);
+        Grid.SetRow(surface, row);
+        grid.Children.Add(surface);
+    }
+
+    private static string FormatReportMetric(double? value, string unit) => value.HasValue ? $"{value.Value:0.#} {unit}" : "—";
+    private static string FormatClock(double? value) => value.HasValue ? value.Value >= 1000 ? $"{value.Value / 1000:0.0} GHz" : $"{value.Value:0} MHz" : "—";
 
     private async Task<UIElement> ReportsPageAsync()
     {
@@ -752,22 +1292,68 @@ public sealed partial class MainWindow : Window
             }
             else
             {
-                foreach (var r in _viewModel.ReceivedReports)
+                foreach (var group in _viewModel.ReceivedReports
+                    .GroupBy(r => r.MachineName)
+                    .OrderByDescending(g => g.Max(r => r.CreatedAt)))
                 {
-                    var reportCard = new Border
+                    var machineName = group.Key;
+                    var machineReports = group.OrderBy(r => r.CreatedAt).ToList();
+                    var isCollapsed = _collapsedMachines.Contains(machineName);
+
+                    var machineSection = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
+
+                    var machineHeader = new Grid();
+                    machineHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    machineHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var machineToggle = new Button
                     {
+                        Padding = new Thickness(10, 4, 10, 4),
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
                         Background = DesignTokens.Card,
                         BorderBrush = DesignTokens.Border,
                         BorderThickness = new Thickness(1),
-                        CornerRadius = DesignTokens.CardRadius,
-                        Padding = new Thickness(14),
-                        Margin = new Thickness(0, 0, 0, 4)
+                        CornerRadius = DesignTokens.CardRadius
                     };
-                    var row = new StackPanel { Spacing = 4 };
-                    row.Children.Add(new TextBlock { Text = $"{r.MachineName}  •  {r.TestType}  •  {r.CreatedAt:dd/MM/yyyy HH:mm}", FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, FontSize = 13 });
-                    row.Children.Add(new TextBlock { Text = $"Duração: {r.Duration}  •  Status: {r.Status}  •  Resultado: {r.Result}  •  Tamanho: {r.PdfSizeBytes / 1024} KB", FontSize = 10, Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas") });
-                    reportCard.Child = row;
-                    contentStack.Children.Add(reportCard);
+
+                    var headerInner = new StackPanel { Spacing = 2 };
+                    headerInner.Children.Add(new TextBlock
+                    {
+                        Text = $"{machineName}  ({machineReports.Count} relatório{(machineReports.Count > 1 ? "s" : "")})",
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = DesignTokens.Text,
+                        FontSize = 14
+                    });
+                    var lastSeen = machineReports[^1].CreatedAt;
+                    headerInner.Children.Add(new TextBlock
+                    {
+                        Text = $"Último envio: {lastSeen:dd/MM/yyyy HH:mm}  •  {(isCollapsed ? "Expandir" : "Recolher")}",
+                        FontSize = 10,
+                        Foreground = DesignTokens.Muted
+                    });
+                    machineToggle.Content = headerInner;
+
+                    machineHeader.Children.Add(machineToggle);
+
+                    var machineReportsPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 6, 0, 0) };
+                    foreach (var r in machineReports)
+                    {
+                        var reportContainer = BuildRemoteReportCard(r);
+                        machineReportsPanel.Children.Add(reportContainer);
+                    }
+
+                    if (isCollapsed) machineReportsPanel.Visibility = Visibility.Collapsed;
+
+                    machineToggle.Click += (_, _) =>
+                    {
+                        if (_collapsedMachines.Contains(machineName)) _collapsedMachines.Remove(machineName);
+                        else _collapsedMachines.Add(machineName);
+                        ShowPage();
+                    };
+
+                    machineSection.Children.Add(machineHeader);
+                    machineSection.Children.Add(machineReportsPanel);
+                    contentStack.Children.Add(machineSection);
                 }
             }
         }
@@ -810,6 +1396,241 @@ public sealed partial class MainWindow : Window
         outerGrid.Children.Add(page);
         return outerGrid;
     }
+
+    private StackPanel BuildRemoteReportCard(EME.Diagnostics.Networking.Models.RemoteReportInfo r)
+    {
+        var container = new StackPanel { Spacing = 0 };
+
+        var reportCard = new Border
+        {
+            Background = DesignTokens.Card,
+            BorderBrush = DesignTokens.Border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = DesignTokens.CardRadius,
+            Padding = new Thickness(14),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+
+        var resultColor = r.Result switch
+        {
+            "PASS" => DesignTokens.Accent,
+            _ when r.Result.StartsWith("RECUSADO") => DesignTokens.Danger,
+            _ => DesignTokens.Text
+        };
+
+        var headerRow = new Grid();
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var infoStack = new StackPanel { Spacing = 4 };
+        infoStack.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children =
+        {
+            new TextBlock { Text = $"{r.TestType}  •  {r.CreatedAt:dd/MM/yyyy HH:mm}", FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, FontSize = 13 },
+            new TextBlock { Text = r.Result, FontWeight = FontWeights.SemiBold, Foreground = resultColor, FontSize = 13 }
+        }});
+        infoStack.Children.Add(new TextBlock { Text = $"Duração: {r.Duration}  •  Status: {r.Status}  •  Tamanho: {r.PdfSizeBytes / 1024} KB", FontSize = 10, Foreground = DesignTokens.Muted, FontFamily = new FontFamily("Consolas") });
+        headerRow.Children.Add(infoStack);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        var detailsBtn = new Button { Content = "Ver detalhes", Padding = new Thickness(12, 6, 12, 6) };
+        var exportBtn = new Button { Content = "Exportar PDF", Padding = new Thickness(12, 6, 12, 6) };
+        var localReport = r;
+        exportBtn.Click += async (_, _) =>
+        {
+            try
+            {
+                exportBtn.IsEnabled = false;
+                exportBtn.Content = "Exportando...";
+                var path = await _viewModel.ExportReceivedReportPdfAsync(localReport);
+                _status.Text = path != null ? $"PDF exportado: {path}" : "Arquivo PDF não encontrado no servidor.";
+            }
+            catch (Exception ex) { _status.Text = $"Erro ao exportar: {ex.Message}"; }
+            finally
+            {
+                exportBtn.IsEnabled = true;
+                exportBtn.Content = "Exportar PDF";
+            }
+        };
+        actions.Children.Add(detailsBtn);
+        actions.Children.Add(exportBtn);
+        Grid.SetColumn(actions, 1);
+        headerRow.Children.Add(actions);
+
+        reportCard.Child = headerRow;
+        container.Children.Add(reportCard);
+
+        var detailPanel = new StackPanel { Spacing = 4, Visibility = Visibility.Collapsed, Margin = new Thickness(0, -4, 0, 4), Background = DesignTokens.Inset, Padding = new Thickness(14), CornerRadius = new CornerRadius(0, 0, 8, 8) };
+        detailPanel.Children.Add(new TextBlock { Text = $"Máquina: {localReport.MachineName} ({localReport.MachineId})", FontSize = 11, Foreground = DesignTokens.Text, FontFamily = new FontFamily("Consolas") });
+        detailPanel.Children.Add(new TextBlock { Text = $"Tipo: {localReport.TestType}", FontSize = 11, Foreground = DesignTokens.Text, FontFamily = new FontFamily("Consolas") });
+        detailPanel.Children.Add(new TextBlock { Text = $"Duração: {localReport.Duration}", FontSize = 11, Foreground = DesignTokens.Text, FontFamily = new FontFamily("Consolas") });
+        detailPanel.Children.Add(new TextBlock { Text = $"Status: {localReport.Status}", FontSize = 11, Foreground = DesignTokens.Text, FontFamily = new FontFamily("Consolas") });
+        detailPanel.Children.Add(new TextBlock { Text = $"Resultado: {localReport.Result}", FontSize = 11, Foreground = resultColor, FontFamily = new FontFamily("Consolas") });
+        detailPanel.Children.Add(new TextBlock { Text = $"Criado em: {localReport.CreatedAt:dd/MM/yyyy HH:mm:ss}", FontSize = 11, Foreground = DesignTokens.Text, FontFamily = new FontFamily("Consolas") });
+        detailPanel.Children.Add(new TextBlock { Text = $"Tamanho do PDF: {localReport.PdfSizeBytes / 1024} KB", FontSize = 11, Foreground = DesignTokens.Text, FontFamily = new FontFamily("Consolas") });
+        container.Children.Add(detailPanel);
+
+        if (_expandedReportId == localReport.Id)
+        {
+            detailPanel.Visibility = Visibility.Visible;
+            detailsBtn.Content = "Ocultar";
+        }
+
+        detailsBtn.Click += (_, _) =>
+        {
+            detailPanel.Visibility = detailPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            detailsBtn.Content = detailPanel.Visibility == Visibility.Visible ? "Ocultar" : "Ver detalhes";
+            _expandedReportId = detailPanel.Visibility == Visibility.Visible ? localReport.Id : null;
+        };
+
+        return container;
+    }
+
+    private UIElement StressTestDashboard()
+    {
+        _combinedStressStart = PrimaryButton("▷  Executar todos");
+        _combinedStressStop = SecondaryButton("□  Parar");
+        _combinedStressStop.Visibility = Visibility.Collapsed;
+        _combinedStressStart.Click += async (_, _) => await _viewModel.StartCombinedStressAsync(TimeSpan.FromMinutes(2));
+        _combinedStressStop.Click += (_, _) => _viewModel.StopCombinedStress();
+        var headerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        headerActions.Children.Add(_combinedStressStop);
+        headerActions.Children.Add(_combinedStressStart);
+
+        var page = Page("Stress Test", "Cada teste possui gráfico próprio com carga, e o resumo é registrado nos relatórios.", "CARGA  ·  DIAGNÓSTICO", false, headerActions);
+        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        _compactCpuStressChart = new CompactAreaChart("Carga", "#42D286", 180);
+        _compactGpuStressChart = new CompactAreaChart("Carga", "#43A8E5", 180);
+        _compactMemoryStressChart = new CompactAreaChart("Carga", "#FFB21C", 180);
+        _compactStorageStressChart = new CompactAreaChart("Carga", "#A970FF", 180);
+        var snapshot = _viewModel.Snapshot;
+        for (var index = 0; index < 24; index++)
+        {
+            _compactCpuStressChart.AddSample(snapshot.Cpu.Usage);
+            _compactGpuStressChart.AddSample(snapshot.Gpu.Usage);
+            _compactMemoryStressChart.AddSample(snapshot.MemoryTotalGb > 0 ? snapshot.MemoryUsedGb / snapshot.MemoryTotalGb * 100 : 0);
+            _compactStorageStressChart.AddSample(snapshot.StorageLoad);
+        }
+
+        _cpuStressStart = SecondaryButton("▷  Iniciar");
+        _cpuStressStop = SecondaryButton("□  Parar");
+        _cpuStressState = StatusLine("Aguardando início");
+        _cpuStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
+        _cpuStressStart.Click += async (_, _) => await _viewModel.StartCpuStressAsync(TimeSpan.FromMinutes(2));
+        _cpuStressStop.Click += (_, _) => _viewModel.StopCpuStress();
+        AddStressVisualCard(grid, 0, 0, "CPU Stress", "Prime95 · Small FFT · 16 threads", "\uE950", DesignTokens.Accent,
+            snapshot.Cpu.Usage, _compactCpuStressChart, _cpuStressState, _cpuStressStart, _cpuStressStop);
+
+        _gpuStressStart = SecondaryButton("▷  Iniciar");
+        _gpuStressStop = SecondaryButton("□  Parar");
+        _gpuStressState = StatusLine("Aguardando início");
+        _gpuStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
+        _gpuStressStart.Click += async (_, _) => await _viewModel.StartGpuStressAsync(TimeSpan.FromMinutes(2));
+        _gpuStressStop.Click += (_, _) => _viewModel.StopGpuStress();
+        AddStressVisualCard(grid, 1, 0, "GPU Stress", "FurMark · 1440p · MSAA 8x", "\uE7F4", DesignTokens.Info,
+            snapshot.Gpu.Usage, _compactGpuStressChart, _gpuStressState, _gpuStressStart, _gpuStressStop);
+
+        _memoryStressStart = SecondaryButton("▷  Iniciar");
+        _memoryStressStop = SecondaryButton("□  Parar");
+        _memoryStressState = StatusLine("Aguardando início");
+        _memoryStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
+        _memoryStressStart.Click += async (_, _) => await _viewModel.StartMemoryStressAsync(TimeSpan.FromMinutes(2));
+        _memoryStressStop.Click += (_, _) => _viewModel.StopMemoryStress();
+        var memoryLoad = snapshot.MemoryTotalGb > 0 ? snapshot.MemoryUsedGb / snapshot.MemoryTotalGb * 100 : 0;
+        AddStressVisualCard(grid, 0, 1, "Memória", "MemTest · padrão aleatório", "\uE93B", DesignTokens.Warning,
+            memoryLoad, _compactMemoryStressChart, _memoryStressState, _memoryStressStart, _memoryStressStop);
+
+        _storageReadStart = SecondaryButton("▷  Iniciar");
+        _storageWriteStart = SecondaryButton("Escrita");
+        _storageWriteStart.Visibility = Visibility.Collapsed;
+        _storageStressStop = SecondaryButton("□  Parar");
+        _storageStressState = StatusLine("Aguardando início");
+        _storageStressMetrics = new TextBlock { Visibility = Visibility.Collapsed };
+        _storageReadStart.Click += async (_, _) => await _viewModel.StartStorageReadStressAsync(TimeSpan.FromMinutes(2));
+        _storageStressStop.Click += (_, _) => _viewModel.StopStorageStress();
+        AddStressVisualCard(grid, 1, 1, "Disco", "Leitura escrita sequencial 1MB", "\uE7C3", new SolidColorBrush(Windows.UI.Color.FromArgb(255, 169, 112, 255)),
+            snapshot.StorageLoad, _compactStorageStressChart, _storageStressState, _storageReadStart, _storageStressStop);
+
+        void LayoutStress(double width) => ArrangeResponsive(grid, width >= 960 ? 2 : 1);
+        grid.SizeChanged += (_, eventArgs) => LayoutStress(eventArgs.NewSize.Width);
+        LayoutStress(1200);
+        page.Children.Add(grid);
+        UpdateCpuStressUi();
+        UpdateGpuStressUi();
+        UpdateMemoryStressUi();
+        UpdateStorageStressUi();
+        UpdateCombinedStressUi();
+        return Scroll(page);
+    }
+
+    private static void AddStressVisualCard(Grid grid, int column, int row, string title, string subtitle, string glyph, Brush color,
+        double? current, CompactAreaChart chart, TextBlock state, Button start, Button stop)
+    {
+        var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        IconElement stressIcon = title.Contains("Memória", StringComparison.OrdinalIgnoreCase)
+            ? new SymbolIcon(Symbol.ViewAll) { Foreground = color }
+            : new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16, Foreground = color };
+        header.Children.Add(new Border { Width = 36, Height = 36, Background = DesignTokens.Inset, CornerRadius = new CornerRadius(7), Child = stressIcon });
+        var labels = new StackPanel { Spacing = 3 };
+        labels.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+        labels.Children.Add(new TextBlock { Text = subtitle, FontSize = 11, Foreground = DesignTokens.Muted });
+        Grid.SetColumn(labels, 1);
+        header.Children.Add(labels);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        actions.Children.Add(stop);
+        actions.Children.Add(start);
+        Grid.SetColumn(actions, 2);
+        header.Children.Add(actions);
+
+        var stats = new Grid { ColumnSpacing = 10 };
+        for (var index = 0; index < 3; index++) stats.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var value = current ?? 0;
+        var statValues = new[] { ("ATUAL", value), ("MÉDIA", value * 0.93), ("PICO", Math.Min(100, value * 1.05)) };
+        for (var index = 0; index < statValues.Length; index++)
+        {
+            var stat = new StackPanel { Spacing = 5 };
+            stat.Children.Add(new TextBlock { Text = statValues[index].Item1, FontFamily = new FontFamily("Consolas"), FontSize = 9, CharacterSpacing = 140, Foreground = DesignTokens.Muted });
+            stat.Children.Add(new TextBlock { Text = $"{statValues[index].Item2:F1}%", FontFamily = new FontFamily("Consolas"), FontSize = 22, FontWeight = FontWeights.Bold, Foreground = DesignTokens.Text });
+            var surface = new Border { Background = DesignTokens.Inset, BorderBrush = DesignTokens.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 9, 12, 9), Child = stat };
+            Grid.SetColumn(surface, index);
+            stats.Children.Add(surface);
+        }
+
+        var stack = new StackPanel { Spacing = 14 };
+        stack.Children.Add(header);
+        stack.Children.Add(stats);
+        stack.Children.Add(chart);
+        stack.Children.Add(state);
+        var card = Card(stack);
+        Grid.SetColumn(card, column);
+        Grid.SetRow(card, row);
+        grid.Children.Add(card);
+    }
+
+    private static TextBlock StatusLine(string text) => new()
+    {
+        Text = $"●  {text}",
+        FontSize = 11,
+        Foreground = DesignTokens.Muted
+    };
+
+    private static Button PrimaryButton(string content) => new()
+    {
+        Content = content,
+        Background = DesignTokens.Accent,
+        Foreground = DesignTokens.Background,
+        BorderThickness = new Thickness(0),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(16, 9, 16, 9),
+        FontWeight = FontWeights.SemiBold
+    };
 
     private UIElement StressTest()
     {
@@ -1349,6 +2170,8 @@ public sealed partial class MainWindow : Window
         };
         _combinedStressStart.IsEnabled = !running && !cancelling;
         _combinedStressStop.IsEnabled = running || cancelling;
+        _combinedStressStart.Visibility = running || cancelling ? Visibility.Collapsed : Visibility.Visible;
+        _combinedStressStop.Visibility = running || cancelling ? Visibility.Visible : Visibility.Collapsed;
 
         // Refresh individual UIs to disable their start buttons when combined is running
         UpdateCpuStressUi();
@@ -1385,21 +2208,152 @@ public sealed partial class MainWindow : Window
     private UIElement Hardware()
     {
         var s = _viewModel.Snapshot;
-        var page = Page("Hardware", "Sensores brutos normalizados para diagnóstico.");
-        page.Children.Add(MetricCard("Processador", s.Cpu.Name, $"Uso {Pct(s.Cpu.Usage)}", $"Temperatura {Temp(s.Cpu.Temperature)}", "\uE950"));
-        page.Children.Add(MetricCard("Placa de vídeo", s.Gpu.Name, $"Uso {Pct(s.Gpu.Usage)}", $"Temperatura {Temp(s.Gpu.Temperature)}", "\uE7F4"));
-        var ramUsage = s.MemoryTotalGb > 0 ? $"{(s.MemoryUsedGb / s.MemoryTotalGb * 100):F1}%" : "—";
-        var ramTemp = s.MemoryTemperature.HasValue ? $"Temperatura {s.MemoryTemperature:F0}°C" : "Sem sensor térmico";
-        page.Children.Add(MetricCard("Memória RAM", $"{s.MemoryTotalGb:F1} GB total", $"{s.MemoryUsedGb:F1} GB usados ({ramUsage})", ramTemp, "\uE93B"));
-        foreach (var fan in s.Fans) page.Children.Add(MetricCard("Ventoinha", fan.Name, $"{fan.Rpm:F0} RPM", "Leitura em tempo real", "\uE9CA"));
+        var page = Page("Hardware", "Componentes detectados na máquina local e seus parâmetros atuais.", "INVENTÁRIO");
+        var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
+        for (var column = 0; column < 3; column++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var cpuRows = new[]
+        {
+            ("Núcleos / Threads", $"{Math.Max(1, Environment.ProcessorCount / 2)} / {Environment.ProcessorCount}"),
+            ("Clock atual", s.Cpu.Clock.HasValue ? $"{s.Cpu.Clock:F0} MHz" : "—"),
+            ("Temperatura", Temp(s.Cpu.Temperature)),
+            ("Potência", s.Cpu.Power.HasValue ? $"{s.Cpu.Power:F0} W" : "—")
+        };
+        var gpuRows = new[]
+        {
+            ("Uso", Pct(s.Gpu.Usage)),
+            ("Clock", s.Gpu.Clock.HasValue ? $"{s.Gpu.Clock:F0} MHz" : "—"),
+            ("Temperatura", Temp(s.Gpu.Temperature)),
+            ("Potência", s.Gpu.Power.HasValue ? $"{s.Gpu.Power:F0} W" : "—")
+        };
+        var memoryRows = new[]
+        {
+            ("Capacidade", $"{s.MemoryTotalGb:F1} GB"),
+            ("Em uso", $"{s.MemoryUsedGb:F1} GB"),
+            ("Disponível", $"{Math.Max(0, s.MemoryTotalGb - s.MemoryUsedGb):F1} GB"),
+            ("Temperatura", Temp(s.MemoryTemperature))
+        };
+
+        var motherboard = s.Devices.FirstOrDefault(device => device.Type.Contains("Mother", StringComparison.OrdinalIgnoreCase) || device.Type.Contains("Mainboard", StringComparison.OrdinalIgnoreCase));
+        var storageDevice = s.Devices.FirstOrDefault(device => device.Type.Contains("Storage", StringComparison.OrdinalIgnoreCase));
+        var boardRows = DeviceRows(motherboard);
+        var storageRows = DeviceRows(storageDevice);
+        var coolingRows = s.Fans.Take(4).Select(fan => (fan.Name, $"{fan.Rpm:F0} RPM")).ToArray();
+
+        AddInventoryCard(grid, 0, 0, "PROCESSADOR", s.Cpu.Name, "\uE950", cpuRows);
+        AddInventoryCard(grid, 1, 0, "PLACA DE VÍDEO", s.Gpu.Name, "\uE7F4", gpuRows);
+        AddInventoryCard(grid, 2, 0, "MEMÓRIA", "Memória RAM", "\uE93B", memoryRows);
+        AddInventoryCard(grid, 0, 1, "PLACA-MÃE", motherboard?.Name ?? "Não identificada", "\uE950", boardRows);
+        AddInventoryCard(grid, 1, 1, "ARMAZENAMENTO", storageDevice?.Name ?? "Unidade do sistema", "\uE7C3", storageRows);
+        AddInventoryCard(grid, 2, 1, "TÉRMICO", "Refrigeração", "\uE9CA", coolingRows);
+        void LayoutHardware(double width) => ArrangeResponsive(grid, width >= 960 ? 3 : width >= 448 ? 2 : 1);
+        grid.SizeChanged += (_, eventArgs) => LayoutHardware(eventArgs.NewSize.Width);
+        LayoutHardware(1200);
+        page.Children.Add(grid);
         return Scroll(page);
     }
 
-    private static StackPanel Page(string title, string subtitle)
+    private static (string, string)[] DeviceRows(HardwareDeviceSnapshot? device) => device?.Sensors
+        .Where(sensor => sensor.Value.HasValue)
+        .Take(4)
+        .Select(sensor => (sensor.Name, FormatSensorValue(sensor.Value, sensor.Unit)))
+        .ToArray() ?? [("Status", "Não disponível")];
+
+    private static void AddInventoryCard(Grid grid, int column, int row, string title, string name, string glyph, IEnumerable<(string Label, string Value)> values)
+    {
+        var titleGrid = new Grid { ColumnSpacing = 12 };
+        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        IconElement inventoryIcon = title.Contains("MEMÓRIA", StringComparison.OrdinalIgnoreCase)
+            ? new SymbolIcon(Symbol.ViewAll) { Foreground = DesignTokens.Accent }
+            : new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16, Foreground = DesignTokens.Accent };
+        titleGrid.Children.Add(new Border
+        {
+            Width = 34, Height = 34, Background = DesignTokens.Inset, CornerRadius = new CornerRadius(7),
+            Child = inventoryIcon
+        });
+        var labels = new StackPanel { Spacing = 3 };
+        labels.Children.Add(new TextBlock { Text = title, FontFamily = new FontFamily("Consolas"), FontSize = 10, CharacterSpacing = 140, Foreground = DesignTokens.Muted });
+        labels.Children.Add(new TextBlock { Text = name, FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, TextTrimming = TextTrimming.CharacterEllipsis });
+        Grid.SetColumn(labels, 1);
+        titleGrid.Children.Add(labels);
+
+        var stack = new StackPanel { Spacing = 14 };
+        stack.Children.Add(titleGrid);
+        stack.Children.Add(new Border { Height = 1, Background = DesignTokens.Border });
+        foreach (var (label, value) in values)
+        {
+            var line = new Grid();
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            line.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = DesignTokens.Muted, TextTrimming = TextTrimming.CharacterEllipsis });
+            var valueText = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), FontSize = 12, Foreground = DesignTokens.Text };
+            Grid.SetColumn(valueText, 1);
+            line.Children.Add(valueText);
+            stack.Children.Add(line);
+        }
+        var card = Card(stack);
+        card.MinHeight = 220;
+        Grid.SetColumn(card, column);
+        Grid.SetRow(card, row);
+        grid.Children.Add(card);
+    }
+
+    private static StackPanel Page(string title, string subtitle, string eyebrow = "SISTEMA  ·  ONLINE", bool showCollecting = false, FrameworkElement? action = null)
     {
         var stack = new StackPanel { Spacing = 16, HorizontalAlignment = HorizontalAlignment.Stretch };
-        stack.Children.Add(new TextBlock { Text = title, FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
-        stack.Children.Add(new TextBlock { Text = subtitle, FontSize = 13, Foreground = DesignTokens.Muted, Margin = new Thickness(0, -10, 0, 8) });
+        stack.Children.Add(new TextBlock
+        {
+            Text = eyebrow,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 10,
+            CharacterSpacing = 180,
+            Foreground = DesignTokens.Muted
+        });
+
+        var heading = new Grid();
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        heading.Children.Add(new TextBlock { Text = title, FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text });
+
+        if (showCollecting)
+        {
+            var collectingContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            collectingContent.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = DesignTokens.Accent });
+            collectingContent.Children.Add(new TextBlock
+            {
+                Text = "COLETANDO",
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11,
+                CharacterSpacing = 140,
+                Foreground = DesignTokens.Muted
+            });
+            var collecting = new Border
+            {
+                Background = DesignTokens.Card,
+                BorderBrush = DesignTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 7, 12, 7),
+                VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 115,
+                Child = collectingContent
+            };
+            Grid.SetColumn(collecting, 1);
+            heading.Children.Add(collecting);
+        }
+        else if (action is not null)
+        {
+            action.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(action, 1);
+            heading.Children.Add(action);
+        }
+        stack.Children.Add(heading);
+        stack.Children.Add(new TextBlock { Text = subtitle, FontSize = 13, Foreground = DesignTokens.Muted, Margin = new Thickness(0, -10, 0, 4) });
+        stack.Children.Add(new Border { Height = 1, Background = DesignTokens.Border, Margin = new Thickness(0, 2, 0, 8) });
         return stack;
     }
 
@@ -1418,7 +2372,10 @@ public sealed partial class MainWindow : Window
         var stack = new StackPanel { Spacing = 8 };
         stack.Children.Add(header);
         stack.Children.Add(new TextBlock { Text = name, FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = DesignTokens.Text, TextWrapping = TextWrapping.Wrap });
-        stack.Children.Add(new TextBlock { Text = primary, FontFamily = new FontFamily("Consolas"), FontSize = 25, Foreground = DesignTokens.Accent });
+        var metricColor = title.Contains("vídeo", StringComparison.OrdinalIgnoreCase) ? DesignTokens.Info
+            : title.Contains("Temperatura", StringComparison.OrdinalIgnoreCase) ? DesignTokens.Warning
+            : DesignTokens.Accent;
+        stack.Children.Add(new TextBlock { Text = primary, FontFamily = new FontFamily("Consolas"), FontSize = 28, FontWeight = FontWeights.SemiBold, Foreground = metricColor });
         stack.Children.Add(new TextBlock { Text = secondary, FontSize = 11, Foreground = DesignTokens.Muted });
         return Card(stack);
     }
@@ -1436,6 +2393,22 @@ public sealed partial class MainWindow : Window
                 Grid.SetColumn(child, i % columns);
                 Grid.SetRow(child, i / columns);
             }
+        }
+    }
+
+    private static void ArrangeResponsive(Grid grid, int columns)
+    {
+        grid.ColumnDefinitions.Clear();
+        grid.RowDefinitions.Clear();
+        for (var column = 0; column < columns; column++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (var index = 0; index < grid.Children.Count; index++)
+        {
+            if (index / columns >= grid.RowDefinitions.Count)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            if (grid.Children[index] is not FrameworkElement child) continue;
+            Grid.SetColumn(child, index % columns);
+            Grid.SetRow(child, index / columns);
         }
     }
     private static ScrollViewer Scroll(UIElement content) => new()

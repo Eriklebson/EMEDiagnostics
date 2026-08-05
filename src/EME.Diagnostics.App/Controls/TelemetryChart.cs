@@ -35,7 +35,7 @@ public sealed partial class TelemetryChart : Grid
         {
             series =
             [
-                ("read", "LEITURA", "#4DA3FF", 0),
+                ("read", "LEITURA", "#43A8E5", 0),
                 ("write", "ESCRITA", "#FF5C6C", 1),
                 ("temperature", "TEMP", "#A970FF", 2),
             ];
@@ -44,17 +44,17 @@ public sealed partial class TelemetryChart : Grid
         {
             series =
             [
-                ("usage", "USO", "#4DA3FF", 0),
+                ("usage", "USO", "#42D286", 0),
                 ("temperature", "TEMP", "#FF5C6C", 1),
                 ("used", "USADA", "#A970FF", 2),
-                ("free", "DISP", "#4CCBA0", 3),
+                ("free", "DISP", "#43A8E5", 3),
             ];
         }
         else if (isGpu)
         {
             series =
             [
-                ("usage", "USO", "#4DA3FF", 0),
+                ("usage", "USO", "#43A8E5", 0),
                 ("temperature", "TEMPERATURA", "#FF5C6C", 1),
                 ("clock", "CLOCK", "#A970FF", 2),
                 ("power", "POTÊNCIA", "#FFC857", 3)
@@ -67,7 +67,7 @@ public sealed partial class TelemetryChart : Grid
         {
             series =
             [
-                ("usage", "USO", "#4DA3FF", 0),
+                ("usage", "USO", "#42D286", 0),
                 ("temperature", "TEMPERATURA", "#FF5C6C", 1),
                 ("clock", "CLOCK", "#A970FF", 2),
                 ("power", "POTÊNCIA", "#FFC857", 3)
@@ -94,8 +94,8 @@ public sealed partial class TelemetryChart : Grid
         var plotHost = new Border
         {
             Height = 230,
-            Background = Brush("#1B1D22"),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
+            Background = Brush("#111314"),
+            BorderBrush = Brush("#2A2D2F"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
             Child = _plot
@@ -210,7 +210,7 @@ public sealed partial class TelemetryChart : Grid
                 X2 = width,
                 Y1 = y,
                 Y2 = y,
-                Stroke = new SolidColorBrush(Color.FromArgb(18, 255, 255, 255)),
+                Stroke = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
                 StrokeThickness = 1
             });
         }

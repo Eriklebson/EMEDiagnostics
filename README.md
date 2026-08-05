@@ -162,6 +162,17 @@ Padrão Cyber Dark herdado do ecossistema E.M.E:
 
 ## Histórico de Versões
 
+### v1.3.0 (2026-08-05) — Novo layout e responsividade
+
+| Tipo | Mudança |
+|------|---------|
+| 🎨 Interface | Redesign Cyber Dark alinhado ao layout de referência |
+| 📐 Responsividade | Grades adaptáveis no Dashboard, Stress Test e Hardware; tabela de Relatórios com rolagem horizontal |
+| 📊 Relatórios | Collapse integrado, métricas detalhadas e exportação PDF independente |
+| 🌐 Rede | Persistência de relatórios recebidos, descoberta LAN aprimorada e diagnóstico de conexão |
+| 🛠️ Estabilidade | Correções de inicialização, navegação e recursos WinUI |
+| ⚙️ Build | 0 erros, 0 warnings. v1.3.0 |
+
 ### v1.2.0 (2026-07-30) — Rede LAN, modo Servidor/Cliente
 
 | Tipo | Mudança |
